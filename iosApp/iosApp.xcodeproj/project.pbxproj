@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 60;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -14,6 +14,10 @@
 		2152FB042600AC8F00CF470E /* iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2152FB032600AC8F00CF470E /* iOSApp.swift */; };
 		3FDCFB96518F86B53D4E5ADD /* Pods_iosApp.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 28A2BBF98AD622240C0C6069 /* Pods_iosApp.framework */; };
 		7555FF83242A565900829871 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7555FF82242A565900829871 /* ContentView.swift */; };
+		AE05BBAA2FAC4275002887A0 /* OpenKuiklyIOSRender.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AE05BB9F2FAC423B002887A0 /* OpenKuiklyIOSRender.xcframework */; };
+		AE05BBBB2FAC6111002887A0 /* OpenKuiklyIOSRender.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AE05BB9F2FAC423B002887A0 /* OpenKuiklyIOSRender.xcframework */; };
+		AE05BBBC2FAC6111002887A0 /* OpenKuiklyIOSRender.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AE05BB9F2FAC423B002887A0 /* OpenKuiklyIOSRender.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		AE132B092F99F0AE0026C458 /* KuiklyRenderComponentExpandHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = FF6B714F29A2A6FF009349F1 /* KuiklyRenderComponentExpandHandler.m */; };
 		AE4EC9472F98D1D300E0BB28 /* SingleKuikltViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4EC9462F98D1D300E0BB28 /* SingleKuikltViewController.swift */; };
 		AE4EC9692F98F17800E0BB28 /* KuiklyKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AE4EC9622F98F17800E0BB28 /* KuiklyKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EE19F4E1528D8FCCF9F4804D /* Pods_KuiklyKeyboard.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 332B950A233F2EC420ED0F4F /* Pods_KuiklyKeyboard.framework */; };
@@ -34,6 +38,27 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		AA0000000000000000000004 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE05BBBD2FAC6111002887A0 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				AE05BBBC2FAC6111002887A0 /* OpenKuiklyIOSRender.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AE4EC95D2F98F15A00E0BB28 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -62,6 +87,7 @@
 		7555FF7B242A565900829871 /* iosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7555FF82242A565900829871 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		7555FF8C242A565B00829871 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AE05BB9F2FAC423B002887A0 /* OpenKuiklyIOSRender.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = OpenKuiklyIOSRender.xcframework; sourceTree = "<group>"; };
 		AE4EC9462F98D1D300E0BB28 /* SingleKuikltViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleKuikltViewController.swift; sourceTree = "<group>"; };
 		AE4EC9622F98F17800E0BB28 /* KuiklyKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KuiklyKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2D469447CF8820FFC2FAB8C /* Pods-KuiklyKeyboard.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KuiklyKeyboard.debug.xcconfig"; path = "Target Support Files/Pods-KuiklyKeyboard/Pods-KuiklyKeyboard.debug.xcconfig"; sourceTree = "<group>"; };
@@ -77,7 +103,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AE4EC96A2F98F17800E0BB28 /* Exceptions for "KuiklyKeyboard" folder in "KuiklyKeyboard" target */ = {
+		AE4EC96A2F98F17800E0BB28 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -87,18 +113,7 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		AE4EC9632F98F17800E0BB28 /* KuiklyKeyboard */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				AE4EC96A2F98F17800E0BB28 /* Exceptions for "KuiklyKeyboard" folder in "KuiklyKeyboard" target */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = KuiklyKeyboard;
-			sourceTree = "<group>";
-		};
+		AE4EC9632F98F17800E0BB28 /* KuiklyKeyboard */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AE4EC96A2F98F17800E0BB28 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = KuiklyKeyboard; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -106,6 +121,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AE05BBBB2FAC6111002887A0 /* OpenKuiklyIOSRender.xcframework in Frameworks */,
 				3FDCFB96518F86B53D4E5ADD /* Pods_iosApp.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -114,6 +130,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AE05BBAA2FAC4275002887A0 /* OpenKuiklyIOSRender.xcframework in Frameworks */,
 				EE19F4E1528D8FCCF9F4804D /* Pods_KuiklyKeyboard.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -125,6 +142,7 @@
 			isa = PBXGroup;
 			children = (
 				0474A3F029F6A41000F43E31 /* FDFullscreenPopGesture */,
+				AE05BB9F2FAC423B002887A0 /* OpenKuiklyIOSRender.xcframework */,
 			);
 			name = Vendor;
 			sourceTree = "<group>";
@@ -248,6 +266,7 @@
 				6715C2D1184DF4DA5556ABE1 /* [CP] Embed Pods Frameworks */,
 				5F7D03A0C5FA3A0565EB29A2 /* [CP] Copy Pods Resources */,
 				AE4EC95D2F98F15A00E0BB28 /* Embed Foundation Extensions */,
+				AE05BBBD2FAC6111002887A0 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -268,6 +287,7 @@
 				AE4EC95F2F98F17800E0BB28 /* Frameworks */,
 				AE4EC9602F98F17800E0BB28 /* Resources */,
 				031CA24D48D696B05170B52E /* [CP] Copy Pods Resources */,
+				AA0000000000000000000004 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -346,9 +366,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-KuiklyKeyboard/Pods-KuiklyKeyboard-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-KuiklyKeyboard/Pods-KuiklyKeyboard-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -363,9 +387,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-iosApp/Pods-iosApp-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-iosApp/Pods-iosApp-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -380,9 +408,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-iosApp/Pods-iosApp-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-iosApp/Pods-iosApp-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -456,6 +488,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AE132B092F99F0AE0026C458 /* KuiklyRenderComponentExpandHandler.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -640,13 +673,22 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 3YCGH6CCXA;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/iosApp",
+				);
 				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"COCOAPODS=1",
+					"IS_EXTENSION=1",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KuiklyKeyboard/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KuiklyKeyboard;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 orgName. All rights reserved.";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -676,13 +718,22 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3YCGH6CCXA;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/iosApp",
+				);
 				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"COCOAPODS=1",
+					"IS_EXTENSION=1",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KuiklyKeyboard/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KuiklyKeyboard;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 orgName. All rights reserved.";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

@@ -13,6 +13,7 @@ class KeyboardViewController: UIInputViewController, KuiklyViewBaseDelegate {
 
     @IBOutlet var nextKeyboardButton: UIButton!
     
+    var baseKv : KuiklyBaseView!
     override func updateViewConstraints() {
         super.updateViewConstraints()
         
@@ -21,6 +22,10 @@ class KeyboardViewController: UIInputViewController, KuiklyViewBaseDelegate {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        let heightConstraint = view.heightAnchor.constraint(equalToConstant: 320)
+            heightConstraint.priority = .defaultHigh   // 999，避免和系统冲突
+            heightConstraint.isActive = true
         
         // Perform custom UI setup here
         self.nextKeyboardButton = UIButton(type: .system)
@@ -36,10 +41,21 @@ class KeyboardViewController: UIInputViewController, KuiklyViewBaseDelegate {
         self.nextKeyboardButton.leftAnchor.constraint(equalTo: self.view.leftAnchor).isActive = true
         self.nextKeyboardButton.bottomAnchor.constraint(equalTo: self.view.bottomAnchor).isActive = true
         
-        let baseKv = KuiklyBaseView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 400), pageName: "image_adapter", pageData: [:], delegate: self, frameworkName: "shared")
+        baseKv = KuiklyBaseView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 320), pageName: "BaseKbPage", pageData: [:], delegate: self, frameworkName: "shared")
         view.addSubview(baseKv)
+        
+        
+        NSLayoutConstraint.activate([
+            baseKv.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            baseKv.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            baseKv.topAnchor.constraint(equalTo: view.topAnchor),
+            baseKv.bottomAnchor.constraint(equalTo: nextKeyboardButton.topAnchor),
+        ])
+
+        
         baseKv.viewWillAppear()
         baseKv.viewDidAppear()
+        
     }
     
     override func viewWillLayoutSubviews() {

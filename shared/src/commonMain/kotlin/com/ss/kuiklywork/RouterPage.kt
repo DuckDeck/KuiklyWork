@@ -4,230 +4,92 @@ import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.*
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.module.RouterModule
-import com.tencent.kuikly.core.module.SharedPreferencesModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-import com.tencent.kuikly.core.utils.urlParams
-import com.tencent.kuikly.core.views.*
-import com.tencent.kuikly.core.views.compose.Button
 import com.tencent.kuikly.core.reactive.handler.*
+import com.tencent.kuikly.core.views.*
 import com.ss.kuiklywork.base.BasePager
-import com.ss.kuiklywork.base.bridgeModule
 
 @Page("router", supportInLocal = true)
 internal class RouterPage : BasePager() {
 
-    var inputText: String = ""
-    lateinit var inputRef: ViewRef<InputView>
+    private data class ListItem(val title: String, val pageName: String)
+
+    private val items = listOf(
+        ListItem("彼岸图网", "detail"),
+        ListItem("图片浏览器", "detail"),
+        ListItem("壁纸精选", "detail"),
+        ListItem("风景壁纸", "detail"),
+        ListItem("动漫壁纸", "detail"),
+        ListItem("游戏壁纸", "detail")
+    )
 
     override fun body(): ViewBuilder {
         val ctx = this
         return {
             attr {
-                backgroundColor(Color.WHITE)
+                backgroundColor(Color(0xFFF2F2F7))
             }
-            // 背景图
             RouterNavBar {
                 attr {
                     title = TITLE
                     backDisable = true
                 }
             }
-
-            View {
+            List {
                 attr {
-                    allCenter()
-                    margin(20f)
+                    flex(1f)
                 }
-                View {
-                    attr {
-                        backgroundColor(Color.WHITE)
-                        borderRadius(10f)
-                        padding(10f)
-                    }
-                    Image {
-                        attr {
-                            src(LOGO)
-                            size(
-                                pagerData.pageViewWidth * 0.6f,
-                                (pagerData.pageViewWidth * 0.6f) * (1987f / 2894f)
-                            )
-                        }
-                    }
-                }
-
-            }
-
-            View {
-                attr {
-                    flexDirectionRow()
-                }
-                View {
-                    attr {
-                        margin(all = 10f)
-                        marginTop(0f)
-                        height(40f)
-                        flex(1f)
-                        borderRadius(5f)
-                    }
+                ctx.items.forEach { item ->
                     View {
                         attr {
-                            absolutePositionAllZero()
-                            backgroundLinearGradient(
-                                Direction.TO_LEFT,
-                                ColorStop(Color(0xFF23D3FD), 0f),
-                                ColorStop(Color(0xFFAD37FE), 1f)
-                            )
+                            backgroundColor(Color.WHITE)
+                            padding(16f)
+                            flexDirectionRow()
+                            alignItemsCenter()
                         }
                         View {
                             attr {
-                                absolutePosition(top = 1f, left = 1f, right = 1f, bottom = 1f)
-                                backgroundColor(Color.WHITE)
-                                borderRadius(5f)
+                                flex(1f)
+                            }
+                            Text {
+                                attr {
+                                    text(item.title)
+                                    fontSize(17f)
+                                    color(Color(0xFF333333))
+                                }
                             }
                         }
-                    }
-                    Input {
-                        ref {
-                            ctx.inputRef = it
-                        }
-                        attr {
-                            flex(1f)
-                            fontSize(15f)
-                            color(Color(0xFFAD37FE))
-                            marginLeft(10f)
-                            marginRight(10f)
-                            placeholder(PLACEHOLDER)
-                            autofocus(true)
-                            placeholderColor(Color(0xAA23D3FD))
-
+                        Text {
+                            attr {
+                                text(">")
+                                fontSize(17f)
+                                color(Color(0xFFC7C7CC))
+                            }
                         }
                         event {
-                            textDidChange {
-                                ctx.inputText = it.text
+                            click {
+                                val pageData = JSONObject()
+                                pageData.put("title", item.title)
+                                ctx.acquireModule<RouterModule>(RouterModule.MODULE_NAME)
+                                    .openPage(item.pageName, pageData)
                             }
                         }
                     }
-                }
-                Button {
-                    attr {
-                        size(80f, 40f)
-                        borderRadius(20f)
-                        marginLeft(2f)
-                        marginRight(15f)
-                        backgroundLinearGradient(
-                            Direction.TO_BOTTOM,
-                            ColorStop(Color(0xAA23D3FD), 0f),
-                            ColorStop(Color(0xAAAD37FE), 1f)
-                        )
-
-                        titleAttr {
-                            text(JUMP_TEXT)
-                            fontSize(17f)
-                            color(Color.WHITE)
-                        }
-                    }
-                    event {
-                        click {
-                            if (ctx.inputText.isEmpty()) {
-                                ctx.bridgeModule.toast("请输入PageName")
-                            } else {
-                                ctx.inputRef.view?.blur() // 失焦
-                                getPager().acquireModule<SharedPreferencesModule>(
-                                    SharedPreferencesModule.MODULE_NAME
-                                ).setItem(
-                                    CACHE_KEY, ctx.inputText
-                                )
-                                ctx.jumpPage(ctx.inputText)
-
-                            }
+                    View {
+                        attr {
+                            height(0.5f)
+                            backgroundColor(Color(0xFFE5E5EA))
+                            marginLeft(16f)
                         }
                     }
                 }
-
             }
-
-            Text {
-                attr {
-                    fontSize(15f)
-                    marginLeft(10f)
-                    marginTop(5f)
-                    text(if (pagerData.params.optString("execute_mode") == "1") AAR_MODE_TIP else TIP)
-
-                    backgroundLinearGradient(
-                        Direction.TO_RIGHT,
-                        ColorStop(Color(0xFFAD37FE), 0f),
-                        ColorStop(Color(0xFF23D3FD), 1f)
-                    )
-
-                }
-            }
-
-            View {
-                attr {
-                    allCenter()
-                    margin(20f)
-                }
-                Text {
-                    attr {
-                        fontSize(20f)
-                        text("ImageAdapter基准测试")
-                        textDecorationUnderLine()
-                        backgroundLinearGradient(
-                            Direction.TO_RIGHT,
-                            ColorStop(Color(0xFFAD37FE), 0f),
-                            ColorStop(Color(0xFF23D3FD), 1f)
-                        )
-                    }
-                }
-                event {
-                    click {
-                        ctx.jumpPage("image_adapter")
-                    }
-                }
-            }
-
         }
-
-    }
-
-    override fun created() {
-        super.created()
-    }
-
-    override fun viewDidLoad() {
-        super.viewDidLoad()
-        val cacheInputText =
-            acquireModule<SharedPreferencesModule>(SharedPreferencesModule.MODULE_NAME).getItem(
-                CACHE_KEY
-            )
-        if (cacheInputText.isNotEmpty()) {
-            inputRef.view?.setText(cacheInputText)
-        }
-    }
-
-    private fun jumpPage(inputText: String) {
-        val params = urlParams("pageName=$inputText")
-        val pageData = JSONObject()
-        params.forEach {
-            pageData.put(it.key, it.value)
-        }
-        val pageName = pageData.optString("pageName")
-        acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage(pageName, pageData)
     }
 
     companion object {
-        const val PLACEHOLDER = "输入pageName"
-        const val TIP = "输入规则：router 或者 router&key=value (&后面为页面参数)"
-        const val CACHE_KEY = "router_last_input_key2"
-        const val BG_URL =
-            "https://sqimg.qq.com/qq_product_operations/kan/images/viola/viola_bg.jpg"
-        const val LOGO = "https://vfiles.gtimg.cn/wuji_dashboard/wupload/xy/starter/62394e19.png"
-        const val JUMP_TEXT = "跳转"
-        const val TEXT_KEY = "text"
-        const val TITLE = "Kuikly页面路由"
-        private const val AAR_MODE_TIP = "如：router 或者 router&key=value （&后面为页面参数）"
+        const val TITLE = "首页"
     }
-
 }
 
 internal class RouterNavigationBar : ComposeView<RouterNavigationBarAttr, ComposeEvent>() {
@@ -247,29 +109,20 @@ internal class RouterNavigationBar : ComposeView<RouterNavigationBarAttr, Compos
                     paddingTop(ctx.pagerData.statusBarHeight)
                     backgroundColor(Color.WHITE)
                 }
-                // nav bar
                 View {
                     attr {
                         height(44f)
                         allCenter()
                     }
-
                     Text {
                         attr {
                             text(ctx.attr.title)
                             fontSize(17f)
                             fontWeightSemisolid()
-                            backgroundLinearGradient(
-                                Direction.TO_BOTTOM,
-                                ColorStop(Color(0xFF23D3FD), 0f),
-                                ColorStop(Color(0xFFAD37FE), 1f)
-                            )
-
+                            color(Color.BLACK)
                         }
                     }
-
                 }
-
                 vif({ !ctx.attr.backDisable }) {
                     Image {
                         attr {
@@ -290,7 +143,12 @@ internal class RouterNavigationBar : ComposeView<RouterNavigationBarAttr, Compos
                         }
                     }
                 }
-
+                View {
+                    attr {
+                        height(0.5f)
+                        backgroundColor(Color(0xFFE5E5EA))
+                    }
+                }
             }
         }
     }

@@ -6,6 +6,13 @@ import { KuiklyRenderCallback } from '@kuikly-open/render';
 import util from '@ohos.util';
 import fs from '@ohos.file.fs';
 import { fileUri } from '@kit.CoreFileKit';
+import { http } from '@kit.NetworkKit';
+
+interface FetchHtmlResult {
+  code: number;
+  message?: string;
+  body?: string;
+}
 
 export class KRBridgeModule extends KuiklyRenderBaseModule {
   static readonly MODULE_NAME = "HRBridgeModule";
@@ -21,6 +28,7 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
   static readonly CURRENT_TIME_STAMP = "currentTimestamp";
   static readonly DATE_FORMATTER = "dateFormatter";
   static readonly READ_ASSET_FILE = "readAssetFile";
+  static readonly FETCH_HTML = "fetchHtml";
 
   syncMode(): boolean {
     return false;
@@ -74,6 +82,10 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
         this.readAssetFile(params, callback);
         break;
       }
+      case KRBridgeModule.FETCH_HTML: {
+        this.fetchHtml(params, callback);
+        break;
+      }
       default:
         break;
     }
@@ -124,6 +136,81 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
   private dateFormatter(params: KRAny): string {
     console.log(`========== ${params}`)
     return "";
+  }
+
+  private fetchHtml(params: KRAny, callback: KuiklyRenderCallback) {
+    const url = this.readUrl(params);
+    if (!url) {
+      this.callbackFetchHtml(callback, { "code": -1, "message": "missing url" });
+      return;
+    }
+    console.info(`[KuiklyWork] fetchHtml start: ${url}`);
+    const request = http.createHttp();
+    request.request(url, {
+      method: http.RequestMethod.GET,
+      header: {
+        'User-Agent': 'Mozilla/5.0 KuiklyWork',
+        'Accept': 'text/html,application/xhtml+xml'
+      },
+      expectDataType: http.HttpDataType.STRING,
+      connectTimeout: 10000,
+      readTimeout: 10000
+    }, (err: BusinessError, data: http.HttpResponse) => {
+      request.destroy();
+      if (err) {
+        console.error(`[KuiklyWork] fetchHtml failed: ${err.message}`);
+        this.callbackFetchHtml(callback, { "code": -1, "message": err.message });
+        return;
+      }
+      const code = data.responseCode;
+      if (code < 200 || code >= 300) {
+        console.error(`[KuiklyWork] fetchHtml http error: ${code}`);
+        this.callbackFetchHtml(callback, { "code": -1, "message": `http ${code}` });
+        return;
+      }
+      const body = this.responseToString(data.result);
+      console.info(`[KuiklyWork] fetchHtml success, length: ${body.length}`);
+      this.callbackFetchHtml(callback, { "code": 0, "body": body });
+    });
+  }
+
+  private readUrl(params: KRAny): string {
+    try {
+      if (typeof params === 'string') {
+        const records = JSON.parse(params) as Record<string, string>;
+        return records["url"] || "";
+      }
+      if (params != null && typeof params === 'object') {
+        const records = params as Record<string, string>;
+        return records["url"] || "";
+      }
+    } catch (e) {
+      console.error(`[KuiklyWork] fetchHtml parse params failed: ${e}`);
+    }
+    return "";
+  }
+
+  private callbackFetchHtml(callback: KuiklyRenderCallback, result: FetchHtmlResult) {
+    try {
+      callback(result);
+    } catch (e) {
+      console.error(`[KuiklyWork] fetchHtml callback failed: ${e}`);
+    }
+  }
+
+  private responseToString(result: string | Object | ArrayBuffer): string {
+    if (typeof result === 'string') {
+      return result;
+    }
+    if (result instanceof ArrayBuffer) {
+      const bytes = new Uint8Array(result);
+      try {
+        return new util.TextDecoder('utf-8').decodeWithStream(bytes);
+      } catch (e) {
+        return new util.TextDecoder().decodeWithStream(bytes);
+      }
+    }
+    return JSON.stringify(result);
   }
 
   private readAssetFile(params: KRAny, callback: KuiklyRenderCallback) {

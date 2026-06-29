@@ -71,6 +71,12 @@ internal class BridgeModule : Module() {
         callNativeMethod("toast", methodArgs, null)
     }
 
+    fun fetchHtml(url: String, responseCallbackFn: CallbackFn) {
+        val methodArgs = JSONObject()
+        methodArgs.put("url", url)
+        callNativeMethod(FETCH_HTML, methodArgs, responseCallbackFn)
+    }
+
     fun openPage(
         url: String,
         closeCurPage: Boolean = false,
@@ -352,6 +358,7 @@ internal class BridgeModule : Module() {
         const val URL_DECODE = "urlDecode"
         const val SHOW_PHOTO_BROWSER = "showPhotoBrowser"
         const val HUMAN_VERIFICATION = "humanVerification"
+        const val FETCH_HTML = "fetchHtml"
     }
 
 }

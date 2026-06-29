@@ -12,6 +12,8 @@ import android.util.Log
 import android.widget.ImageView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestBuilder
+import com.bumptech.glide.load.model.GlideUrl
+import com.bumptech.glide.load.model.LazyHeaders
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import com.tencent.kuikly.core.render.android.KuiklyRenderViewContext
@@ -57,14 +59,15 @@ class KRImageAdapter(val context: Context) : IKRImageAdapter {
         } else {
             imageLoadOption.src
         }
+        val model = imageModel(src)
         val requestBuilder = if (src.endsWith(".gif")) {
             Glide.with(KRApplication.application)
                 .asGif()
-                .load(src) as RequestBuilder<Drawable>
+                .load(model) as RequestBuilder<Drawable>
         } else {
             Glide.with(KRApplication.application)
                 .asDrawable()
-                .load(src)
+                .load(model)
         }
 
         if (imageLoadOption.needResize) {
@@ -96,6 +99,19 @@ class KRImageAdapter(val context: Context) : IKRImageAdapter {
             })
     }
 
+    private fun imageModel(src: String): Any {
+        if (!src.startsWith("https://pic.netbian.com/")) {
+            return src
+        }
+        Log.i("KuiklyWork", "load netbian image with headers: $src")
+        return GlideUrl(
+            src,
+            LazyHeaders.Builder()
+                .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+                .addHeader("Referer", "https://pic.netbian.com/")
+                .build()
+        )
+    }
     private fun loadFromBase64(
         imageLoadOption: HRImageLoadOption,
         callback: (drawable: Drawable?) -> Unit,

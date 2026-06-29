@@ -3,6 +3,8 @@ package com.ss.kuiklywork.module
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderBaseModule
@@ -13,8 +15,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.charset.Charset
 
 class KRBridgeModule : KuiklyRenderBaseModule() {
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun call(method: String, params: String?, callback: KuiklyRenderCallback?): Any? {
         return when (method) {
@@ -44,6 +51,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
             "log" -> {
                 log(params)
+            }
+
+            "fetchHtml" -> {
+                fetchHtml(params, callback)
             }
 
             "reportDT" -> {
@@ -79,6 +90,79 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
     }
 
+    private fun fetchHtml(params: String?, callback: KuiklyRenderCallback?) {
+        Log.i(TAG, "fetchHtml called, params=$params, callback=${callback != null}")
+        if (params == null) {
+            invokeFetchCallback(callback, mapOf("code" to -1, "message" to "missing params"))
+            return
+        }
+        val requestUrl = runCatching { JSONObject(params).optString("url") }
+            .onFailure { Log.e(TAG, "fetchHtml parse params failed", it) }
+            .getOrDefault("")
+        if (requestUrl.isEmpty()) {
+            invokeFetchCallback(callback, mapOf("code" to -1, "message" to "missing url"))
+            return
+        }
+        Thread {
+            var connection: HttpURLConnection? = null
+            try {
+                Log.i(TAG, "fetchHtml start request: $requestUrl")
+                connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    setRequestProperty("User-Agent", "Mozilla/5.0 KuiklyWork")
+                    setRequestProperty("Accept", "text/html,application/xhtml+xml")
+                }
+                val code = connection.responseCode
+                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                val bytes = stream?.readBytes() ?: ByteArray(0)
+                Log.i(TAG, "fetchHtml response code=$code, bytes=${bytes.size}, contentType=${connection.contentType}")
+                if (code !in 200..299) {
+                    invokeFetchCallback(callback, mapOf("code" to -1, "message" to "http $code"))
+                    return@Thread
+                }
+                val body = decodeHtml(bytes, connection.contentType)
+                Log.i(TAG, "fetchHtml success, bodyLength=${body.length}")
+                invokeFetchCallback(callback, mapOf("code" to 0, "body" to body))
+            } catch (e: Throwable) {
+                Log.e(TAG, "fetchHtml failed", e)
+                invokeFetchCallback(callback, mapOf("code" to -1, "message" to (e.message ?: "request failed")))
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
+    }
+
+    private fun invokeFetchCallback(callback: KuiklyRenderCallback?, result: Map<String, Any>) {
+        Log.i(TAG, "fetchHtml callback scheduled: code=${result["code"]}, keys=${result.keys}")
+        mainHandler.post {
+            try {
+                callback?.invoke(result)
+                Log.i(TAG, "fetchHtml callback invoked")
+            } catch (e: Throwable) {
+                Log.e(TAG, "fetchHtml callback failed", e)
+            }
+        }
+    }
+
+    private fun decodeHtml(bytes: ByteArray, contentType: String?): String {
+        val charsetName = contentType
+            ?.split(";")
+            ?.map { it.trim() }
+            ?.firstOrNull { it.startsWith("charset=", ignoreCase = true) }
+            ?.substringAfter("=")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        val candidates = listOfNotNull(charsetName, "UTF-8", "GB18030", "GBK")
+        for (candidate in candidates.distinct()) {
+            try {
+                return String(bytes, Charset.forName(candidate))
+            } catch (_: Throwable) {
+            }
+        }
+        return String(bytes)
+    }
     private fun reportRealtime(params: String?) {
     }
 
@@ -167,6 +251,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
     companion object {
         const val MODULE_NAME = "HRBridgeModule"
+        private const val TAG = "KuiklyWork"
     }
 }
 

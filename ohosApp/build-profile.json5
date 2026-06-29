@@ -1,6 +1,19 @@
 {
   "app": {
     "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\hugfo\\.ohos\\config\\default_ohosApp_KgIZqV2jmouLujVzKTcFgN-jIImW_FDDA4u9KsJFH-E=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BC2A6E75E6E1FAF48D2C4F4ABF5F4CEABF112AF89771C366676D01E9D725A80A958A64CF770BFC3",
+          "profile": "C:\\Users\\hugfo\\.ohos\\config\\default_ohosApp_KgIZqV2jmouLujVzKTcFgN-jIImW_FDDA4u9KsJFH-E=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\hugfo\\.ohos\\config\\default_ohosApp_KgIZqV2jmouLujVzKTcFgN-jIImW_FDDA4u9KsJFH-E=.p12",
+          "storePassword": "0000001B3A14DD95B8FCFD5F5AE6D126E3337AB752E1A00EC44CA900AD4CF9BF1991C4865E20F9603D30F3"
+        }
+      }
     ],
     "products": [
       {
@@ -12,7 +25,8 @@
           "strictMode": {
             "useNormalizedOHMUrl": true
           }
-        }
+        },
+        "targetSdkVersion": "6.1.1(24)"
       }
     ],
     "buildModeSet": [

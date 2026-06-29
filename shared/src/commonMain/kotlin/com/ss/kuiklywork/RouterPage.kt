@@ -15,12 +15,12 @@ internal class RouterPage : BasePager() {
     private data class ListItem(val title: String, val pageName: String)
 
     private val items = listOf(
-        ListItem("彼岸图网", "detail"),
-        ListItem("图片浏览器", "detail"),
-        ListItem("壁纸精选", "detail"),
-        ListItem("风景壁纸", "detail"),
-        ListItem("动漫壁纸", "detail"),
-        ListItem("游戏壁纸", "detail")
+        ListItem("彼岸图网", "imageList"),
+//        ListItem("图片浏览器", "detail"),
+//        ListItem("壁纸精选", "detail"),
+//        ListItem("风景壁纸", "detail"),
+//        ListItem("动漫壁纸", "detail"),
+//        ListItem("游戏壁纸", "detail")
     )
 
     override fun body(): ViewBuilder {

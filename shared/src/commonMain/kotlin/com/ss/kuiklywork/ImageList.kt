@@ -15,6 +15,8 @@ import com.tencent.kuikly.core.views.layout.Row
 
 private const val NETBIAN_HOME_URL = "https://pic.netbian.com/"
 private const val NETBIAN_HOST = "https://pic.netbian.com"
+private const val MAX_RENDER_ITEMS = 120
+private const val PAGE_TIMEOUT_MS = 15000
 
 data class ImageItem(
     val url: String,
@@ -25,48 +27,94 @@ data class ImageItem(
 internal class ImageListPage : BasePager() {
 
     var imageItems by observable(listOf<ImageItem>())
-    private var loading by observable(false)
-    private var statusMessage by observable("\u6b63\u5728\u52a0\u8f7d...")
+    var loading by observable(false)
+    var loadingMore by observable(false)
+    var noMore by observable(false)
+    var statusMessage by observable("")
+    var pageIndex = 0
     private var requestId = 0
 
     override fun created() {
         super.created()
-        loadImages()
+        refreshImages()
     }
 
-    private fun loadImages() {
+    fun refreshImages() {
+        val bridgeModule = acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
+        bridgeModule.log("ImageList refreshImages")
+        pageIndex = 0
+        noMore = false
+        imageItems = emptyList()
+        loadPage(page = 1, append = false)
+    }
+
+    fun loadMore() {
+        if (loading || loadingMore || noMore) {
+            return
+        }
+        loadPage(page = pageIndex + 1, append = true)
+    }
+
+    private fun loadPage(page: Int, append: Boolean) {
         val bridgeModule = acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
         val currentRequestId = ++requestId
-        bridgeModule.log("ImageList loadImages start requestId=$currentRequestId")
-        loading = true
-        statusMessage = "\u6b63\u5728\u52a0\u8f7d..."
-        setTimeout(15000) {
-            if (loading && currentRequestId == requestId) {
-                bridgeModule.log("ImageList request timeout requestId=$currentRequestId")
+        val pageUrl = netbianPageUrl(page)
+        bridgeModule.log("ImageList loadPage start requestId=$currentRequestId page=$page append=$append url=$pageUrl")
+
+        if (append) {
+            loadingMore = true
+        } else {
+            loading = true
+        }
+        statusMessage = ""
+
+        setTimeout(PAGE_TIMEOUT_MS) {
+            if (currentRequestId == requestId && (loading || loadingMore)) {
+                bridgeModule.log("ImageList request timeout requestId=$currentRequestId page=$page")
                 loading = false
+                loadingMore = false
                 statusMessage = "\u8bf7\u6c42\u8d85\u65f6\uff0c\u8bf7\u91cd\u8bd5"
             }
         }
-        bridgeModule.fetchHtml(NETBIAN_HOME_URL) { response ->
+
+        bridgeModule.fetchHtml(pageUrl) { response ->
             bridgeModule.log("ImageList fetchHtml callback requestId=$currentRequestId current=$requestId responseNull=${response == null}")
             val code = response?.optInt("code", -1) ?: -1
             val message = response?.optString("message", "\u8bf7\u6c42\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5") ?: "\u8bf7\u6c42\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5"
             val html = response?.optString("body", "") ?: ""
             val parsedItems = if (code == 0) parseNetbianImages(html) else emptyList()
-            bridgeModule.log("ImageList schedule apply code=$code parsed=${parsedItems.size}, htmlLength=${html.length}")
+            bridgeModule.log("ImageList schedule apply page=$page code=$code parsed=${parsedItems.size}, htmlLength=${html.length}")
+
             setTimeout(0) {
-                bridgeModule.log("ImageList apply state requestId=$currentRequestId current=$requestId parsed=${parsedItems.size}")
+                bridgeModule.log("ImageList apply state requestId=$currentRequestId current=$requestId page=$page parsed=${parsedItems.size}")
                 if (currentRequestId != requestId) {
                     return@setTimeout
                 }
-                imageItems = parsedItems
+
                 loading = false
-                statusMessage = when {
-                    response == null -> "\u8bf7\u6c42\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5"
-                    code != 0 -> message
-                    parsedItems.isEmpty() -> "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247"
-                    else -> ""
+                loadingMore = false
+
+                if (response == null || code != 0) {
+                    statusMessage = if (response == null) "\u8bf7\u6c42\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5" else message
+                    return@setTimeout
                 }
+
+                if (parsedItems.isEmpty()) {
+                    if (append) {
+                        noMore = true
+                        statusMessage = ""
+                    } else {
+                        statusMessage = "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247"
+                    }
+                    return@setTimeout
+                }
+
+                val mergedItems = if (append) mergeImageItems(imageItems, parsedItems) else parsedItems
+                imageItems = mergedItems.take(MAX_RENDER_ITEMS)
+                pageIndex = page
+                noMore = parsedItems.size < 10 || mergedItems.size >= MAX_RENDER_ITEMS
+                statusMessage = ""
+                bridgeModule.log("ImageList page applied page=$page total=${imageItems.size} noMore=$noMore")
             }
         }
     }
@@ -91,29 +139,42 @@ internal class ImageListPage : BasePager() {
                 Text {
                     attr {
                         text(ctx.statusMessage)
-                        height(52f)
+                        height(if (ctx.statusMessage.isEmpty() || ctx.imageItems.isNotEmpty()) 0f else 48f)
                         fontSize(15f)
                         color(Color(0xFF666666))
                         textAlignCenter()
                     }
                     event {
                         click {
-                            if (!ctx.loading && ctx.imageItems.isEmpty()) {
-                                ctx.loadImages()
+                            if (!ctx.loading && !ctx.loadingMore && ctx.imageItems.isEmpty()) {
+                                ctx.refreshImages()
                             }
                         }
                     }
                 }
                 Row {
-                    attr {
-                        flex(1f)
-                    }
                     FixedWaterfallColumn(ctx, startIndex = 0, rightMargin = 3f, leftMargin = 0f)
                     FixedWaterfallColumn(ctx, startIndex = 1, rightMargin = 0f, leftMargin = 3f)
                 }
+                LoadMoreFooter(ctx)
             }
         }
     }
+}
+
+private fun netbianPageUrl(page: Int): String {
+    return if (page <= 1) NETBIAN_HOME_URL else "${NETBIAN_HOST}/index_${page}.html"
+}
+
+private fun mergeImageItems(oldItems: List<ImageItem>, newItems: List<ImageItem>): List<ImageItem> {
+    val seenUrls = mutableSetOf<String>()
+    val result = mutableListOf<ImageItem>()
+    (oldItems + newItems).forEach { item ->
+        if (seenUrls.add(item.url)) {
+            result.add(item)
+        }
+    }
+    return result
 }
 
 private fun parseNetbianImages(html: String): List<ImageItem> {
@@ -166,22 +227,6 @@ private fun String.decodeBasicHtmlEntities(): String {
         .replace("&nbsp;", " ")
 }
 
-private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.UnusedCenterMessage(message: String) {
-    View {
-        attr {
-            flex(1f)
-            allCenter()
-        }
-        Text {
-            attr {
-                text(message)
-                fontSize(15f)
-                color(Color(0xFF666666))
-            }
-        }
-    }
-}
-
 private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.FixedWaterfallColumn(
     ctx: ImageListPage,
     startIndex: Int,
@@ -198,7 +243,7 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.FixedWaterfallColum
                 marginLeft(leftMargin)
             }
         }
-        for (slot in 0 until 10) {
+        for (slot in 0 until MAX_RENDER_ITEMS / 2) {
             WallpaperCard(ctx, startIndex + slot * 2)
         }
     }
@@ -209,18 +254,19 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.WallpaperCard(ctx: 
         attr {
             backgroundColor(Color.WHITE)
             borderRadius(6f)
-            marginBottom(8f)
+            height(if (ctx.imageItems.getOrNull(index) == null) 0f else 178f)
+            marginBottom(if (ctx.imageItems.getOrNull(index) == null) 0f else 8f)
         }
         Image {
             attr {
                 src(ctx.imageItems.getOrNull(index)?.url ?: "")
-                height(126f)
+                height(if (ctx.imageItems.getOrNull(index) == null) 0f else 126f)
                 resizeCover()
             }
         }
         View {
             attr {
-                padding(8f)
+                padding(if (ctx.imageItems.getOrNull(index) == null) 0f else 8f)
             }
             Text {
                 attr {
@@ -230,5 +276,52 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.WallpaperCard(ctx: 
                 }
             }
         }
+    }
+}
+
+private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.LoadMoreFooter(ctx: ImageListPage) {
+    View {
+        attr {
+            height(if (ctx.footerText().isEmpty()) 0f else 52f)
+            marginTop(if (ctx.footerText().isEmpty()) 0f else 2f)
+            marginBottom(if (ctx.footerText().isEmpty()) 0f else 12f)
+            allCenter()
+        }
+        event {
+            click {
+                if (ctx.statusMessage.isNotEmpty() && ctx.imageItems.isEmpty()) {
+                    ctx.refreshImages()
+                } else {
+                    ctx.loadMore()
+                }
+            }
+        }
+        Text {
+            attr {
+                text(ctx.footerText())
+                fontSize(15f)
+                color(if (ctx.noMore) Color(0xFF999999) else Color(0xFF1E6BFF))
+            }
+            event {
+                click {
+                    if (ctx.statusMessage.isNotEmpty() && ctx.imageItems.isEmpty()) {
+                        ctx.refreshImages()
+                    } else {
+                        ctx.loadMore()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun ImageListPage.footerText(): String {
+    return when {
+        loading -> "\u6b63\u5728\u52a0\u8f7d..."
+        loadingMore -> "\u52a0\u8f7d\u66f4\u591a..."
+        noMore && imageItems.isNotEmpty() -> "\u6ca1\u6709\u66f4\u591a\u4e86"
+        statusMessage.isNotEmpty() && imageItems.isEmpty() -> "\u91cd\u8bd5"
+        imageItems.isEmpty() -> ""
+        else -> "\u52a0\u8f7d\u66f4\u591a"
     }
 }

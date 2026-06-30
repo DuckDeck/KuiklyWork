@@ -18,6 +18,8 @@ import java.util.Date
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.Charset
+import java.util.zip.GZIPInputStream
+import java.util.zip.InflaterInputStream
 
 class KRBridgeModule : KuiklyRenderBaseModule() {
 
@@ -111,12 +113,22 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                     requestMethod = "GET"
                     connectTimeout = 10000
                     readTimeout = 10000
-                    setRequestProperty("User-Agent", "Mozilla/5.0 KuiklyWork")
-                    setRequestProperty("Accept", "text/html,application/xhtml+xml")
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                    setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                    setRequestProperty("Accept-Encoding", "identity")
+                    setRequestProperty("Connection", "keep-alive")
+                    setRequestProperty("Referer", "https://pic.netbian.com/")
                 }
                 val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val bytes = stream?.readBytes() ?: ByteArray(0)
+                val rawStream = if (code in 200..299) connection.inputStream else connection.errorStream
+                val encoding = connection.contentEncoding?.lowercase() ?: ""
+                val decompressedStream = when {
+                    encoding.contains("gzip") -> GZIPInputStream(rawStream)
+                    encoding.contains("deflate") -> InflaterInputStream(rawStream)
+                    else -> rawStream
+                }
+                val bytes = decompressedStream?.readBytes() ?: ByteArray(0)
                 Log.i(TAG, "fetchHtml response code=$code, bytes=${bytes.size}, contentType=${connection.contentType}")
                 if (code !in 200..299) {
                     invokeFetchCallback(callback, mapOf("code" to -1, "message" to "http $code"))

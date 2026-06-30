@@ -15,12 +15,39 @@ import com.tencent.kuikly.core.views.layout.Row
 
 private const val NETBIAN_HOME_URL = "https://pic.netbian.com/"
 private const val NETBIAN_HOST = "https://pic.netbian.com"
-private const val MAX_RENDER_ITEMS = 120
+private const val MAX_RENDER_ITEMS = 500
 private const val PAGE_TIMEOUT_MS = 15000
 
 data class ImageItem(
     val url: String,
     val title: String
+)
+
+data class CategoryItem(
+    val name: String,
+    val path: String
+)
+
+private val CATEGORY_LIST = listOf(
+    CategoryItem("全部", "/"),
+    CategoryItem("4K动漫", "/4kdongman/"),
+    CategoryItem("4K游戏", "/4kyouxi/"),
+    CategoryItem("4K美女", "/4kmeinv/"),
+    CategoryItem("4K风景", "/4kfengjing/"),
+    CategoryItem("4K剧照", "/4kjuzhao/"),
+    CategoryItem("4K汽车", "/4kqiche/"),
+    CategoryItem("4K动物", "/4kdongwu/"),
+    CategoryItem("4K宗教", "/4kzongjiao/"),
+    CategoryItem("4K背景", "/4kbeijing/"),
+    CategoryItem("平板", "/pingban/"),
+    CategoryItem("车机", "/cheji/"),
+    CategoryItem("4K手机", "/shoujibizhi/")
+)
+
+data class CategoryCache(
+    val items: List<ImageItem>,
+    val pageIndex: Int,
+    val noMore: Boolean
 )
 
 @Page("imageList")
@@ -31,17 +58,36 @@ internal class ImageListPage : BasePager() {
     var loadingMore by observable(false)
     var noMore by observable(false)
     var statusMessage by observable("")
+    var selectedCategoryIndex by observable(0)
     var pageIndex = 0
     private var requestId = 0
+    private val categoryCache = mutableMapOf<String, CategoryCache>()
+
+    val currentCategoryPath: String
+        get() = CATEGORY_LIST[selectedCategoryIndex].path
 
     override fun created() {
         super.created()
         refreshImages()
     }
 
+    fun selectCategory(index: Int) {
+        if (index == selectedCategoryIndex || loading) return
+        selectedCategoryIndex = index
+        val cached = categoryCache[currentCategoryPath]
+        if (cached != null) {
+            imageItems = cached.items
+            pageIndex = cached.pageIndex
+            noMore = cached.noMore
+            statusMessage = ""
+        } else {
+            refreshImages()
+        }
+    }
+
     fun refreshImages() {
         val bridgeModule = acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
-        bridgeModule.log("ImageList refreshImages")
+        bridgeModule.log("ImageList refreshImages category=${currentCategoryPath}")
         pageIndex = 0
         noMore = false
         imageItems = emptyList()
@@ -114,6 +160,7 @@ internal class ImageListPage : BasePager() {
                 pageIndex = page
                 noMore = parsedItems.size < 10 || mergedItems.size >= MAX_RENDER_ITEMS
                 statusMessage = ""
+                categoryCache[currentCategoryPath] = CategoryCache(imageItems, pageIndex, noMore)
                 bridgeModule.log("ImageList page applied page=$page total=${imageItems.size} noMore=$noMore")
             }
         }
@@ -131,10 +178,20 @@ internal class ImageListPage : BasePager() {
                     backDisable = false
                 }
             }
+            // 分类菜单
+            CategoryMenuBar(ctx)
             Scroller {
                 attr {
                     flex(1f)
                     padding(6f)
+                }
+                event {
+                    scroll {
+                        val threshold = 200f
+                        if (it.offsetY + it.viewHeight >= it.contentHeight - threshold) {
+                            ctx.loadMore()
+                        }
+                    }
                 }
                 Text {
                     attr {
@@ -162,8 +219,14 @@ internal class ImageListPage : BasePager() {
     }
 }
 
-private fun netbianPageUrl(page: Int): String {
-    return if (page <= 1) NETBIAN_HOME_URL else "${NETBIAN_HOST}/index_${page}.html"
+private fun ImageListPage.netbianPageUrl(page: Int): String {
+    val basePath = currentCategoryPath
+    return when {
+        basePath == "/" && page <= 1 -> NETBIAN_HOME_URL
+        basePath == "/" -> "${NETBIAN_HOST}/index_${page}.html"
+        page <= 1 -> "${NETBIAN_HOST}${basePath}"
+        else -> "${NETBIAN_HOST}${basePath}index_${page}.html"
+    }
 }
 
 private fun mergeImageItems(oldItems: List<ImageItem>, newItems: List<ImageItem>): List<ImageItem> {
@@ -318,10 +381,46 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.LoadMoreFooter(ctx:
 private fun ImageListPage.footerText(): String {
     return when {
         loading -> "\u6b63\u5728\u52a0\u8f7d..."
-        loadingMore -> "\u52a0\u8f7d\u66f4\u591a..."
+        loadingMore -> "\u6b63\u5728\u52a0\u8f7d\u7b2c ${pageIndex + 2} \u9875..."
         noMore && imageItems.isNotEmpty() -> "\u6ca1\u6709\u66f4\u591a\u4e86"
         statusMessage.isNotEmpty() && imageItems.isEmpty() -> "\u91cd\u8bd5"
         imageItems.isEmpty() -> ""
-        else -> "\u52a0\u8f7d\u66f4\u591a"
+        else -> "\u6b63\u5728\u52a0\u8f7d\u7b2c ${pageIndex + 2} \u9875"
+    }
+}
+
+private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CategoryMenuBar(ctx: ImageListPage) {
+    Scroller {
+        attr {
+            height(44f)
+            backgroundColor(Color.WHITE)
+            flexDirectionRow()
+            alignItemsCenter()
+        }
+        CATEGORY_LIST.forEachIndexed { index, category ->
+            View {
+                attr {
+                    paddingLeft(16f)
+                    paddingRight(16f)
+                    height(44f)
+                    allCenter()
+                }
+                Text {
+                    attr {
+                        text(category.name)
+                        fontSize(14f)
+                        color(if (index == ctx.selectedCategoryIndex) Color(0xFF1E6BFF) else Color(0xFF333333))
+                        if (index == ctx.selectedCategoryIndex) {
+                            fontWeightBold()
+                        }
+                    }
+                }
+                event {
+                    click {
+                        ctx.selectCategory(index)
+                    }
+                }
+            }
+        }
     }
 }

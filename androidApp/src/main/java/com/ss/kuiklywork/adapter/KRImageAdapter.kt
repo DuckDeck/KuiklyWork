@@ -9,6 +9,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.Base64
 import android.util.Log
+import android.webkit.CookieManager
 import android.widget.ImageView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestBuilder
@@ -106,10 +107,13 @@ class KRImageAdapter(val context: Context) : IKRImageAdapter {
         Log.i("KuiklyWork", "load netbian image with headers: $src")
         return GlideUrl(
             src,
-            LazyHeaders.Builder()
-                .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
-                .addHeader("Referer", "https://pic.netbian.com/")
-                .build()
+            LazyHeaders.Builder().apply {
+                addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+                addHeader("Referer", "https://pic.netbian.com/")
+                CookieManager.getInstance().getCookie("https://pic.netbian.com/")?.takeIf { it.isNotBlank() }?.also {
+                    addHeader("Cookie", it)
+                }
+            }.build()
         )
     }
     private fun loadFromBase64(

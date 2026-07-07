@@ -7,14 +7,17 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
+import android.webkit.CookieManager
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderBaseModule
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
 import com.ss.kuiklywork.KRApplication
 import com.ss.kuiklywork.KuiklyRenderActivity
+import com.ss.kuiklywork.NetbianLoginActivity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
+import android.content.Intent
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.Charset
@@ -57,6 +60,14 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
             "fetchHtml" -> {
                 fetchHtml(params, callback)
+            }
+
+            "openNetbianLogin" -> {
+                openNetbianLogin(callback)
+            }
+
+            "getNetbianLoginState" -> {
+                getNetbianLoginState(callback)
             }
 
             "reportDT" -> {
@@ -119,6 +130,9 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                     setRequestProperty("Accept-Encoding", "identity")
                     setRequestProperty("Connection", "keep-alive")
                     setRequestProperty("Referer", "https://pic.netbian.com/")
+                    netbianCookieFor(requestUrl)?.also {
+                        setRequestProperty("Cookie", it)
+                    }
                 }
                 val code = connection.responseCode
                 val rawStream = if (code in 200..299) connection.inputStream else connection.errorStream
@@ -144,6 +158,34 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 connection?.disconnect()
             }
         }.start()
+    }
+
+    private fun openNetbianLogin(callback: KuiklyRenderCallback?) {
+        NetbianLoginCallbackStore.replace(callback)
+        val ctx = activity ?: context ?: KRApplication.application
+        val intent = Intent(ctx, NetbianLoginActivity::class.java)
+        if (ctx !is android.app.Activity) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(intent)
+    }
+
+    private fun getNetbianLoginState(callback: KuiklyRenderCallback?) {
+        callback?.invoke(
+            mapOf(
+                "code" to 0,
+                "isLoggedIn" to hasNetbianLoginCookie(),
+                "hasCookie" to ((CookieManager.getInstance().getCookie(NETBIAN_HOME_URL) ?: "").isNotEmpty())
+            )
+        )
+    }
+
+    private fun netbianCookieFor(requestUrl: String): String? {
+        val host = runCatching { URL(requestUrl).host }.getOrNull() ?: return null
+        if (!host.endsWith(NETBIAN_HOST)) {
+            return null
+        }
+        return CookieManager.getInstance().getCookie(NETBIAN_HOME_URL)?.takeIf { it.isNotBlank() }
     }
 
     private fun invokeFetchCallback(callback: KuiklyRenderCallback?, result: Map<String, Any>) {
@@ -264,6 +306,57 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     companion object {
         const val MODULE_NAME = "HRBridgeModule"
         private const val TAG = "KuiklyWork"
+        private const val NETBIAN_HOST = "pic.netbian.com"
+        private const val NETBIAN_HOME_URL = "https://pic.netbian.com/"
+
+        fun hasNetbianLoginCookie(): Boolean {
+            val cookie = CookieManager.getInstance().getCookie(NETBIAN_HOME_URL) ?: return false
+            return isNetbianLoginCookie(cookie)
+        }
+
+        fun isNetbianLoginCookie(cookie: String): Boolean {
+            val loginKeys = setOf(
+                "ecmsmluserid",
+                "ecmsmlusername",
+                "ecmsmlgroupid",
+                "ecmsmlrnd",
+                "mluserid",
+                "mlusername",
+                "mlgroupid",
+                "mlrnd",
+                "enewsuserid",
+                "enewsusername",
+                "userid",
+                "username"
+            )
+            return cookie.split(";")
+                .map { it.trim() }
+                .mapNotNull {
+                    val key = it.substringBefore("=", "").trim().lowercase()
+                    val value = it.substringAfter("=", "").trim()
+                    if (key.isNotEmpty() && value.isNotEmpty()) key else null
+                }
+                .any { it in loginKeys }
+        }
+
+        fun isNetbianLoginSuccessUrl(url: String): Boolean {
+            return url.contains("/e/memberconnect/qq/loginend.php", ignoreCase = true) ||
+                url.contains("/e/member/cp/", ignoreCase = true)
+        }
+    }
+}
+
+object NetbianLoginCallbackStore {
+    private var callback: KuiklyRenderCallback? = null
+
+    fun replace(newCallback: KuiklyRenderCallback?) {
+        callback?.invoke(mapOf("code" to -1, "isLoggedIn" to KRBridgeModule.hasNetbianLoginCookie(), "message" to "login replaced"))
+        callback = newCallback
+    }
+
+    fun finish(isLoggedIn: Boolean, message: String = "") {
+        callback?.invoke(mapOf("code" to 0, "isLoggedIn" to isLoggedIn, "message" to message))
+        callback = null
     }
 }
 

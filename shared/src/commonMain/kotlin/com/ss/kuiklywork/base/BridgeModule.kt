@@ -77,6 +77,14 @@ internal class BridgeModule : Module() {
         callNativeMethod(FETCH_HTML, methodArgs, responseCallbackFn)
     }
 
+    fun openNetbianLogin(responseCallbackFn: CallbackFn) {
+        callNativeMethod(OPEN_NETBIAN_LOGIN, null, responseCallbackFn)
+    }
+
+    fun getNetbianLoginState(responseCallbackFn: CallbackFn) {
+        callNativeMethod(GET_NETBIAN_LOGIN_STATE, null, responseCallbackFn)
+    }
+
     fun openPage(
         url: String,
         closeCurPage: Boolean = false,
@@ -359,6 +367,8 @@ internal class BridgeModule : Module() {
         const val SHOW_PHOTO_BROWSER = "showPhotoBrowser"
         const val HUMAN_VERIFICATION = "humanVerification"
         const val FETCH_HTML = "fetchHtml"
+        const val OPEN_NETBIAN_LOGIN = "openNetbianLogin"
+        const val GET_NETBIAN_LOGIN_STATE = "getNetbianLoginState"
     }
 
 }

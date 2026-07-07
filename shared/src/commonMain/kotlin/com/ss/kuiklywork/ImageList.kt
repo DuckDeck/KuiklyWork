@@ -17,6 +17,7 @@ private const val NETBIAN_HOME_URL = "https://pic.netbian.com/"
 private const val NETBIAN_HOST = "https://pic.netbian.com"
 private const val MAX_RENDER_ITEMS = 500
 private const val PAGE_TIMEOUT_MS = 15000
+private const val LIST_HORIZONTAL_PADDING = 6f
 
 data class ImageItem(
     val url: String,
@@ -58,6 +59,8 @@ internal class ImageListPage : BasePager() {
     var loadingMore by observable(false)
     var noMore by observable(false)
     var statusMessage by observable("")
+    var netbianLoggedIn by observable(false)
+    var netbianLoginChecking by observable(false)
     var selectedCategoryIndex by observable(0)
     var pageIndex = 0
     private var requestId = 0
@@ -68,7 +71,28 @@ internal class ImageListPage : BasePager() {
 
     override fun created() {
         super.created()
+        refreshLoginState()
         refreshImages()
+    }
+
+    override fun pageDidAppear() {
+        super.pageDidAppear()
+        refreshLoginState()
+    }
+
+    fun refreshLoginState() {
+        if (netbianLoginChecking) return
+        netbianLoginChecking = true
+        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).getNetbianLoginState { response ->
+            netbianLoginChecking = false
+            netbianLoggedIn = response?.optBoolean("isLoggedIn", false) ?: false
+        }
+    }
+
+    fun openNetbianLogin() {
+        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).openNetbianLogin { response ->
+            netbianLoggedIn = response?.optBoolean("isLoggedIn", false) ?: false
+        }
     }
 
     fun selectCategory(index: Int) {
@@ -180,10 +204,11 @@ internal class ImageListPage : BasePager() {
             }
             // 分类菜单
             CategoryMenuBar(ctx)
+            NetbianLoginBar(ctx)
             Scroller {
                 attr {
                     flex(1f)
-                    padding(6f)
+                    padding(LIST_HORIZONTAL_PADDING)
                 }
                 event {
                     scroll {
@@ -210,10 +235,52 @@ internal class ImageListPage : BasePager() {
                     }
                 }
                 Row {
+                    attr {
+                        width(maxOf(0f, ctx.pageData.pageViewWidth - LIST_HORIZONTAL_PADDING * 2f))
+                    }
                     FixedWaterfallColumn(ctx, startIndex = 0, rightMargin = 3f, leftMargin = 0f)
                     FixedWaterfallColumn(ctx, startIndex = 1, rightMargin = 0f, leftMargin = 3f)
                 }
                 LoadMoreFooter(ctx)
+            }
+        }
+    }
+}
+
+private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.NetbianLoginBar(ctx: ImageListPage) {
+    View {
+        attr {
+            height(40f)
+            backgroundColor(Color.WHITE)
+            paddingLeft(16f)
+            paddingRight(16f)
+            flexDirectionRow()
+            alignItemsCenter()
+            justifyContentSpaceBetween()
+        }
+        Text {
+            attr {
+                text(if (ctx.netbianLoggedIn) "\u5f7c\u5cb8\u56fe\u7f51\uff1a\u5df2\u767b\u5f55" else "\u5f7c\u5cb8\u56fe\u7f51\uff1a\u672a\u767b\u5f55")
+                fontSize(13f)
+                color(Color(0xFF666666))
+            }
+        }
+        Text {
+            attr {
+                text(if (ctx.netbianLoggedIn) "\u91cd\u65b0\u767b\u5f55" else "\u767b\u5f55\u83b7\u53d6\u9ad8\u6e05\u56fe")
+                fontSize(13f)
+                color(Color(0xFF1E6BFF))
+                fontWeightBold()
+            }
+            event {
+                click {
+                    ctx.openNetbianLogin()
+                }
+            }
+        }
+        event {
+            click {
+                ctx.openNetbianLogin()
             }
         }
     }

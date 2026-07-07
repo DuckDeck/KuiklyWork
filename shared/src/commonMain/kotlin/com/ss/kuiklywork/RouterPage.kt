@@ -124,21 +124,25 @@ internal class RouterNavigationBar : ComposeView<RouterNavigationBarAttr, Compos
                     }
                 }
                 vif({ !ctx.attr.backDisable }) {
-                    Image {
+                    View {
                         attr {
                             absolutePosition(
-                                top = 12f + getPager().pageData.statusBarHeight,
-                                left = 12f,
-                                bottom = 12f,
-                                right = 12f
+                                top = getPager().pageData.statusBarHeight,
+                                left = 0f
                             )
-                            size(10f, 17f)
-                            src("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAASBAMAAAB/WzlGAAAAElBMVEUAAAAAAAAAAAAAAAAAAAAAAADgKxmiAAAABXRSTlMAIN/PELVZAGcAAAAkSURBVAjXYwABQTDJqCQAooSCHUAcVROCHBiFECTMhVoEtRYA6UMHzQlOjQIAAAAASUVORK5CYII=")
+                            size(56f, 44f)
+                            allCenter()
                         }
                         event {
                             click {
                                 getPager().acquireModule<RouterModule>(RouterModule.MODULE_NAME)
                                     .closePage()
+                            }
+                        }
+                        Image {
+                            attr {
+                                size(10f, 17f)
+                                src("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAASBAMAAAB/WzlGAAAAElBMVEUAAAAAAAAAAAAAAAAAAAAAAADgKxmiAAAABXRSTlMAIN/PELVZAGcAAAAkSURBVAjXYwABQTDJqCQAooSCHUAcVROCHBiFECTMhVoEtRYA6UMHzQlOjQIAAAAASUVORK5CYII=")
                             }
                         }
                     }

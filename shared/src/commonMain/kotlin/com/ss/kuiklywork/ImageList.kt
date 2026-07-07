@@ -6,6 +6,8 @@ import com.ss.kuiklywork.base.setTimeout
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewBuilder
+import com.tencent.kuikly.core.module.RouterModule
+import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Scroller
@@ -21,7 +23,8 @@ private const val LIST_HORIZONTAL_PADDING = 6f
 
 data class ImageItem(
     val url: String,
-    val title: String
+    val title: String,
+    val detailUrl: String
 )
 
 data class CategoryItem(
@@ -319,6 +322,7 @@ private fun parseNetbianImages(html: String): List<ImageItem> {
         val anchor = anchorRegex.find(itemHtml)?.value ?: return@forEach
         val image = imageRegex.find(itemHtml)?.value ?: return@forEach
         val src = image.extractHtmlAttr("src") ?: return@forEach
+        val detailPath = anchor.extractHtmlAttr("href") ?: return@forEach
         if (!src.contains("/uploads/allimg/")) {
             return@forEach
         }
@@ -329,7 +333,7 @@ private fun parseNetbianImages(html: String): List<ImageItem> {
         val title = anchor.extractHtmlAttr("title")
             ?: image.extractHtmlAttr("alt")
             ?: "\u5f7c\u5cb8\u56fe\u7f51\u56fe\u7247"
-        items.add(ImageItem(url, title.decodeBasicHtmlEntities().trim()))
+        items.add(ImageItem(url, title.decodeBasicHtmlEntities().trim(), detailPath.toAbsoluteNetbianUrl()))
     }
     return items
 }
@@ -403,6 +407,18 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.WallpaperCard(ctx: 
                     text(ctx.imageItems.getOrNull(index)?.title ?: "")
                     fontSize(12f)
                     color(Color(0xFF333333))
+                }
+            }
+        }
+        event {
+            click {
+                ctx.imageItems.getOrNull(index)?.also { item ->
+                    val pageData = JSONObject()
+                    pageData.put("title", item.title)
+                    pageData.put("imageUrl", item.url)
+                    pageData.put("detailUrl", item.detailUrl)
+                    ctx.acquireModule<RouterModule>(RouterModule.MODULE_NAME)
+                        .openPage("imageDetail", pageData)
                 }
             }
         }

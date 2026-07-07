@@ -2,9 +2,14 @@ package com.ss.kuiklywork.module
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
+import android.content.SharedPreferences
+import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import android.webkit.CookieManager
@@ -21,6 +26,8 @@ import android.content.Intent
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.Charset
+import java.io.File
+import java.io.FileOutputStream
 import java.util.zip.GZIPInputStream
 import java.util.zip.InflaterInputStream
 
@@ -68,6 +75,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
             "getNetbianLoginState" -> {
                 getNetbianLoginState(callback)
+            }
+
+            "downloadNetbianImage" -> {
+                downloadNetbianImage(params, callback)
             }
 
             "reportDT" -> {
@@ -174,10 +185,186 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         callback?.invoke(
             mapOf(
                 "code" to 0,
-                "isLoggedIn" to hasNetbianLoginCookie(),
+                "isLoggedIn" to isNetbianLoggedIn(),
                 "hasCookie" to ((CookieManager.getInstance().getCookie(NETBIAN_HOME_URL) ?: "").isNotEmpty())
             )
         )
+    }
+
+    private fun downloadNetbianImage(params: String?, callback: KuiklyRenderCallback?) {
+        val json = runCatching { JSONObject(params ?: "{}") }.getOrDefault(JSONObject())
+        val url = json.optString("url")
+        val title = json.optString("title", "netbian")
+        val referer = json.optString("referer", NETBIAN_HOME_URL).ifEmpty { NETBIAN_HOME_URL }
+        if (url.isEmpty()) {
+            callback?.invoke(mapOf("code" to -1, "message" to "missing url"))
+            return
+        }
+        downloadNetbianImageUrl(url, title, referer, callback, 0)
+    }
+
+    private fun downloadNetbianImageUrl(
+        url: String,
+        title: String,
+        referer: String,
+        callback: KuiklyRenderCallback?,
+        redirectDepth: Int
+    ) {
+        Thread {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+                    setRequestProperty("Referer", referer)
+                    setRequestProperty("Accept-Encoding", "identity")
+                    netbianCookieFor(url)?.also {
+                        setRequestProperty("Cookie", it)
+                    }
+                }
+                val code = connection.responseCode
+                if (code !in 200..299) {
+                    invokeDownloadCallback(callback, mapOf("code" to -1, "message" to "http $code"))
+                    return@Thread
+                }
+                val contentType = connection.contentType ?: ""
+                val bytes = connection.inputStream.readBytes()
+                if (!looksLikeImage(contentType, bytes)) {
+                    val html = decodeHtml(bytes, contentType)
+                    val jsonDownload = parseNetbianDownloadJson(html, url)
+                    if (jsonDownload != null) {
+                        if (redirectDepth < 3 && jsonDownload.pic.isNotEmpty()) {
+                            Log.i(TAG, "downloadNetbianImage retry with json pic=${jsonDownload.pic}")
+                            downloadNetbianImageUrl(jsonDownload.pic, title, referer, callback, redirectDepth + 1)
+                        } else {
+                            invokeDownloadCallback(callback, mapOf("code" to -1, "message" to jsonDownload.message))
+                        }
+                        return@Thread
+                    }
+                    logNetbianDownloadHtml(url, contentType, html)
+                    val nextUrl = parseNetbianDownloadRedirect(html, url)
+                    if (redirectDepth < 3 && !nextUrl.isNullOrEmpty() && nextUrl != url) {
+                        Log.i(TAG, "downloadNetbianImage retry with parsed url=$nextUrl")
+                        downloadNetbianImageUrl(nextUrl, title, referer, callback, redirectDepth + 1)
+                    } else {
+                        invokeDownloadCallback(callback, mapOf("code" to -1, "message" to "\u672a\u83b7\u53d6\u5230\u56fe\u7247\u5185\u5bb9\uff0c\u5df2\u8f93\u51fa\u4e0b\u8f7dHTML/JS\u65e5\u5fd7"))
+                    }
+                    return@Thread
+                }
+                val mimeType = guessImageMimeType(contentType, bytes)
+                val extension = imageExtension(mimeType)
+                val savedUri = saveImageBytes(bytes, title, mimeType, extension)
+                invokeDownloadCallback(
+                    callback,
+                    mapOf("code" to 0, "message" to "\u5df2\u4fdd\u5b58\u5230\u76f8\u518c", "uri" to savedUri)
+                )
+            } catch (e: Throwable) {
+                Log.e(TAG, "downloadNetbianImage failed", e)
+                invokeDownloadCallback(callback, mapOf("code" to -1, "message" to (e.message ?: "download failed")))
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
+    }
+
+    private fun invokeDownloadCallback(callback: KuiklyRenderCallback?, result: Map<String, Any>) {
+        mainHandler.post {
+            callback?.invoke(result)
+        }
+    }
+
+    private data class NetbianDownloadJson(val pic: String, val message: String)
+
+    private fun parseNetbianDownloadJson(body: String, baseUrl: String): NetbianDownloadJson? {
+        val trimmed = body.trim()
+        if (!trimmed.startsWith("{")) return null
+        return runCatching {
+            val json = JSONObject(trimmed)
+            val pic = json.optString("pic", "")
+                .decodeBasicHtmlEntities()
+                .takeIf { it.isNotBlank() }
+                ?.toAbsoluteNetbianUrl(baseUrl)
+                ?: ""
+            val msg = json.optInt("msg", -1)
+            val info = json.optString("info", "")
+                .decodeBasicHtmlEntities()
+                .replace(Regex("<[^>]+>"), "")
+                .trim()
+            val message = when {
+                pic.isNotEmpty() -> "ok"
+                msg == 0 -> "\u8bf7\u5148\u767b\u5f55\u540e\u518d\u4e0b\u8f7d\u9ad8\u6e05\u539f\u56fe"
+                info.isNotEmpty() -> info
+                msg == 1 -> "\u4eca\u65e5\u4e0b\u8f7d\u91cf\u5df2\u7528\u5b8c"
+                msg == 2 -> "\u4eca\u65e5\u4e0b\u8f7d\u6b21\u6570\u5df2\u8fbe\u4e0a\u9650"
+                msg == 5 -> "\u7535\u8111\u514d\u8d39\u4e0b\u8f7d\u4e0d\u4e86\uff0c\u8bf7\u4f7f\u7528\u624b\u673a\u6216\u4f1a\u5458\u4e0b\u8f7d"
+                else -> "\u672a\u83b7\u53d6\u5230\u9ad8\u6e05\u539f\u56fe\u5730\u5740"
+            }
+            NetbianDownloadJson(pic, message)
+        }.getOrNull()
+    }
+
+    private fun parseNetbianDownloadRedirect(html: String, baseUrl: String): String? {
+        val patterns = listOf(
+            Regex("""<img\b[^>]*data-pic=['"]([^'"]+)['"][^>]*>""", RegexOption.IGNORE_CASE),
+            Regex("""(?:window\.)?location(?:\.href)?\s*=\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            Regex("""(?:url|href|src)\s*[:=]\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            Regex("""<a\b[^>]*href=['"]([^'"]+)['"][^>]*>""", RegexOption.IGNORE_CASE),
+            Regex("""https?://pic\.netbian\.com/(?:uploads/allimg|e/[^'"<>\s]*(?:Down|down|download|xiazai))[^'"<>\s]+""", RegexOption.IGNORE_CASE),
+            Regex("""(/uploads/allimg/[^'"<>\s]+)""", RegexOption.IGNORE_CASE),
+            Regex("""(/[^'"<>\s]+(?:Down|down|download|xiazai)[^'"<>\s]*)""", RegexOption.IGNORE_CASE)
+        )
+        val candidates = patterns.flatMap { pattern ->
+            pattern.findAll(html).map { match ->
+                match.groupValues.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: match.value
+            }.toList()
+        }.mapNotNull { candidate ->
+            candidate.decodeBasicHtmlEntities()
+                .substringBefore("\\")
+                .takeIf { it.isNotBlank() }
+                ?.toAbsoluteNetbianUrl(baseUrl)
+        }.filter { candidate ->
+            val lower = candidate.lowercase()
+            lower.contains("pic.netbian.com") &&
+                (lower.contains("/uploads/allimg/") || lower.contains("down") || lower.endsWith(".jpg") || lower.endsWith(".png") || lower.endsWith(".webp")) &&
+                !lower.contains("/tupian/")
+        }.distinct().sortedByDescending { candidate ->
+            when {
+                candidate.contains("/uploads/allimg/", ignoreCase = true) -> 100
+                candidate.contains("Down", ignoreCase = true) || candidate.contains("download", ignoreCase = true) -> 80
+                candidate.endsWith(".jpg", ignoreCase = true) || candidate.endsWith(".png", ignoreCase = true) || candidate.endsWith(".webp", ignoreCase = true) -> 40
+                else -> 0
+            }
+        }
+        Log.i(TAG, "NetbianDownload candidates=${candidates.joinToString(" | ").take(1200)}")
+        return candidates.firstOrNull()
+    }
+
+    private fun logNetbianDownloadHtml(url: String, contentType: String, html: String) {
+        Log.w(TAG, "NetbianDownload non-image url=$url contentType=$contentType htmlLength=${html.length}")
+        Log.i(TAG, "NetbianDownload cookieKeys=${netbianCookieKeys()}")
+        val keywordRegex = Regex(
+            ".{0,120}(down|download|DownSoft|DownSys|onclick|script|location|href|uploads|login|会员|登录).{0,240}",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        )
+        val snippets = keywordRegex.findAll(html)
+            .take(12)
+            .map { it.value.compactForLog() }
+            .toList()
+        snippets.forEachIndexed { index, snippet ->
+            Log.i(TAG, "NetbianDownload snippet[$index]=$snippet")
+        }
+    }
+
+    private fun netbianCookieKeys(): String {
+        return CookieManager.getInstance().getCookie(NETBIAN_HOME_URL)
+            ?.split(";")
+            ?.map { it.substringBefore("=", "").trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.joinToString(",")
+            ?: ""
     }
 
     private fun netbianCookieFor(requestUrl: String): String? {
@@ -186,6 +373,95 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             return null
         }
         return CookieManager.getInstance().getCookie(NETBIAN_HOME_URL)?.takeIf { it.isNotBlank() }
+    }
+
+    private fun safeFileName(title: String): String {
+        val base = title.ifEmpty { "netbian_${System.currentTimeMillis()}" }
+            .replace(Regex("[\\\\/:*?\"<>|\\s]+"), "_")
+            .trim('_')
+            .take(80)
+        return base.ifEmpty { "netbian_${System.currentTimeMillis()}" }
+    }
+
+    private fun looksLikeImage(contentType: String, bytes: ByteArray): Boolean {
+        if (contentType.lowercase().startsWith("image/")) return true
+        return bytes.size > 12 && (
+            bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() ||
+                bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() && bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte() ||
+                bytes[0] == 0x52.toByte() && bytes[1] == 0x49.toByte() && bytes[2] == 0x46.toByte() && bytes[3] == 0x46.toByte()
+            )
+    }
+
+    private fun guessImageMimeType(contentType: String, bytes: ByteArray): String {
+        val lower = contentType.lowercase()
+        return when {
+            lower.startsWith("image/") -> lower.substringBefore(";")
+            bytes.size > 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() -> "image/jpeg"
+            bytes.size > 4 && bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() -> "image/png"
+            bytes.size > 4 && bytes[0] == 0x52.toByte() && bytes[1] == 0x49.toByte() -> "image/webp"
+            else -> "image/jpeg"
+        }
+    }
+
+    private fun imageExtension(mimeType: String): String {
+        return when (mimeType.lowercase()) {
+            "image/png" -> "png"
+            "image/webp" -> "webp"
+            else -> "jpg"
+        }
+    }
+
+    private fun saveImageBytes(bytes: ByteArray, title: String, mimeType: String, extension: String): String {
+        val resolver = KRApplication.application.contentResolver
+        val fileName = "${safeFileName(title)}_${System.currentTimeMillis()}.$extension"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/KuiklyWork")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("create media uri failed")
+            resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                ?: throw IllegalStateException("open media output failed")
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            return uri.toString()
+        }
+        val dir = File(KRApplication.application.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "KuiklyWork")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        val file = File(dir, fileName)
+        FileOutputStream(file).use { it.write(bytes) }
+        return file.absolutePath
+    }
+
+    private fun String.decodeBasicHtmlEntities(): String {
+        return replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&nbsp;", " ")
+    }
+
+    private fun String.toAbsoluteNetbianUrl(baseUrl: String): String {
+        return when {
+            startsWith("//") -> "https:$this"
+            startsWith("http://") || startsWith("https://") -> this
+            startsWith("/") -> "https://pic.netbian.com$this"
+            else -> runCatching {
+                val base = URL(baseUrl)
+                "https://${base.host}/${this.trimStart('/')}"
+            }.getOrDefault("https://pic.netbian.com/${this.trimStart('/')}")
+        }
+    }
+
+    private fun String.compactForLog(): String {
+        return replace(Regex("\\s+"), " ").take(1000)
     }
 
     private fun invokeFetchCallback(callback: KuiklyRenderCallback?, result: Map<String, Any>) {
@@ -308,10 +584,34 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         private const val TAG = "KuiklyWork"
         private const val NETBIAN_HOST = "pic.netbian.com"
         private const val NETBIAN_HOME_URL = "https://pic.netbian.com/"
+        private var netbianLoginSucceeded = false
+
+        fun markNetbianLoginSucceeded() {
+            netbianLoginSucceeded = true
+            netbianPrefs().edit().putBoolean(KEY_NETBIAN_LOGIN_SUCCEEDED, true).apply()
+        }
+
+        fun isNetbianLoggedIn(): Boolean {
+            if (hasNetbianLoginCookie()) {
+                markNetbianLoginSucceeded()
+                return true
+            }
+            val hasCookie = hasNetbianCookie()
+            if (!hasCookie) {
+                netbianLoginSucceeded = false
+                netbianPrefs().edit().putBoolean(KEY_NETBIAN_LOGIN_SUCCEEDED, false).apply()
+                return false
+            }
+            return netbianLoginSucceeded || netbianPrefs().getBoolean(KEY_NETBIAN_LOGIN_SUCCEEDED, false)
+        }
 
         fun hasNetbianLoginCookie(): Boolean {
             val cookie = CookieManager.getInstance().getCookie(NETBIAN_HOME_URL) ?: return false
             return isNetbianLoginCookie(cookie)
+        }
+
+        fun hasNetbianCookie(): Boolean {
+            return !CookieManager.getInstance().getCookie(NETBIAN_HOME_URL).isNullOrBlank()
         }
 
         fun isNetbianLoginCookie(cookie: String): Boolean {
@@ -343,6 +643,13 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             return url.contains("/e/memberconnect/qq/loginend.php", ignoreCase = true) ||
                 url.contains("/e/member/cp/", ignoreCase = true)
         }
+
+        private fun netbianPrefs(): SharedPreferences {
+            return KRApplication.application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        }
+
+        private const val PREFS_NAME = "netbian_login"
+        private const val KEY_NETBIAN_LOGIN_SUCCEEDED = "login_succeeded"
     }
 }
 
@@ -350,7 +657,7 @@ object NetbianLoginCallbackStore {
     private var callback: KuiklyRenderCallback? = null
 
     fun replace(newCallback: KuiklyRenderCallback?) {
-        callback?.invoke(mapOf("code" to -1, "isLoggedIn" to KRBridgeModule.hasNetbianLoginCookie(), "message" to "login replaced"))
+        callback?.invoke(mapOf("code" to -1, "isLoggedIn" to KRBridgeModule.isNetbianLoggedIn(), "message" to "login replaced"))
         callback = newCallback
     }
 

@@ -96,7 +96,7 @@ class NetbianLoginActivity : AppCompatActivity() {
                     if (KRBridgeModule.hasNetbianLoginCookie() || KRBridgeModule.isNetbianLoginSuccessUrl(url)) {
                         view.postDelayed({
                             CookieManager.getInstance().flush()
-                            finishWithCurrentState("\u767b\u5f55\u6210\u529f")
+                            finishWithLoginSuccess()
                         }, LOGIN_SUCCESS_DELAY_MS)
                     }
                 }
@@ -115,7 +115,7 @@ class NetbianLoginActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         if (!callbackSent) {
-            NetbianLoginCallbackStore.finish(KRBridgeModule.hasNetbianLoginCookie(), "\u767b\u5f55\u9875\u5df2\u5173\u95ed")
+            NetbianLoginCallbackStore.finish(KRBridgeModule.isNetbianLoggedIn(), "\u767b\u5f55\u9875\u5df2\u5173\u95ed")
             callbackSent = true
         }
         webView.destroy()
@@ -124,7 +124,16 @@ class NetbianLoginActivity : AppCompatActivity() {
 
     private fun finishWithCurrentState(message: String) {
         if (!callbackSent) {
-            NetbianLoginCallbackStore.finish(KRBridgeModule.hasNetbianLoginCookie(), message)
+            NetbianLoginCallbackStore.finish(KRBridgeModule.isNetbianLoggedIn(), message)
+            callbackSent = true
+        }
+        finish()
+    }
+
+    private fun finishWithLoginSuccess() {
+        KRBridgeModule.markNetbianLoginSucceeded()
+        if (!callbackSent) {
+            NetbianLoginCallbackStore.finish(true, "\u767b\u5f55\u6210\u529f")
             callbackSent = true
         }
         finish()

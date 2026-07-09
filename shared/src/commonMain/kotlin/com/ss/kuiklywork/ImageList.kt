@@ -45,7 +45,8 @@ private val CATEGORY_LIST = listOf(
     CategoryItem("4K背景", "/4kbeijing/"),
     CategoryItem("平板", "/pingban/"),
     CategoryItem("车机", "/cheji/"),
-    CategoryItem("4K手机", "/shoujibizhi/")
+    CategoryItem("4K手机", "/shoujibizhi/"),
+    CategoryItem("8K壁纸", "/search/2332-0.html")
 )
 
 data class CategoryCache(
@@ -291,9 +292,14 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.NetbianLoginBar(ctx
 
 private fun ImageListPage.netbianPageUrl(page: Int): String {
     val basePath = currentCategoryPath
+    val searchMatch = Regex("^/search/(\\d+)-\\d+\\.html$", RegexOption.IGNORE_CASE).find(basePath)
     return when {
         basePath == "/" && page <= 1 -> NETBIAN_HOME_URL
         basePath == "/" -> "${NETBIAN_HOST}/index_${page}.html"
+        searchMatch != null -> {
+            val searchId = searchMatch.groupValues[1]
+            "${NETBIAN_HOST}/search/$searchId-${page - 1}.html"
+        }
         page <= 1 -> "${NETBIAN_HOST}${basePath}"
         else -> "${NETBIAN_HOST}${basePath}index_${page}.html"
     }

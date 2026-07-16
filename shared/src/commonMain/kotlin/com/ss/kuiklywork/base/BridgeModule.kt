@@ -93,6 +93,16 @@ internal class BridgeModule : Module() {
         callNativeMethod(DOWNLOAD_NETBIAN_IMAGE, methodArgs, responseCallbackFn)
     }
 
+    fun getNetbianDownloadRecords(responseCallbackFn: CallbackFn) {
+        callNativeMethod(GET_NETBIAN_DOWNLOAD_RECORDS, null, responseCallbackFn)
+    }
+
+    fun markNetbianImageDownloaded(url: String, responseCallbackFn: CallbackFn? = null) {
+        val methodArgs = JSONObject()
+        methodArgs.put("url", url)
+        callNativeMethod(MARK_NETBIAN_IMAGE_DOWNLOADED, methodArgs, responseCallbackFn)
+    }
+
     fun openPage(
         url: String,
         closeCurPage: Boolean = false,
@@ -378,6 +388,8 @@ internal class BridgeModule : Module() {
         const val OPEN_NETBIAN_LOGIN = "openNetbianLogin"
         const val GET_NETBIAN_LOGIN_STATE = "getNetbianLoginState"
         const val DOWNLOAD_NETBIAN_IMAGE = "downloadNetbianImage"
+        const val GET_NETBIAN_DOWNLOAD_RECORDS = "getNetbianDownloadRecords"
+        const val MARK_NETBIAN_IMAGE_DOWNLOADED = "markNetbianImageDownloaded"
     }
 
 }

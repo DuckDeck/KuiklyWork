@@ -7,6 +7,8 @@
 static NSString * const kNetbianHomeURL = @"https://pic.netbian.com/";
 static NSString * const kNetbianLoginURL = @"https://pic.netbian.com/e/memberconnect/?apptype=qq";
 static NSString * const kNetbianLoginSucceededKey = @"netbian_login_succeeded";
+static NSString * const kNetbianDownloadedURLsKey = @"netbian_downloaded_urls";
+static const NSUInteger kNetbianDownloadRecordLimit = 500;
 static KuiklyRenderCallback gNetbianLoginCallback = nil;
 
 @interface NetbianLoginViewController : UIViewController <WKNavigationDelegate>
@@ -170,7 +172,49 @@ static KuiklyRenderCallback gNetbianLoginCallback = nil;
         [self downloadNetbianImageWithParams:params callback:callback];
         return nil;
     }
+    if ([method isEqualToString:@"getNetbianDownloadRecords"]) {
+        [self getNetbianDownloadRecordsWithCallback:callback];
+        return nil;
+    }
+    if ([method isEqualToString:@"markNetbianImageDownloaded"]) {
+        [self markNetbianImageDownloadedWithParams:params callback:callback];
+        return nil;
+    }
     return nil;
+}
+
+- (void)getNetbianDownloadRecordsWithCallback:(KuiklyRenderCallback _Nullable)callback {
+    NSString *urls = [[NSUserDefaults standardUserDefaults] stringForKey:kNetbianDownloadedURLsKey] ?: @"";
+    if (callback) {
+        callback(@{ @"code": @(0), @"urls": urls });
+    }
+}
+
+- (void)markNetbianImageDownloadedWithParams:(id _Nullable)params callback:(KuiklyRenderCallback _Nullable)callback {
+    NSDictionary *dict = [self dictionaryFromParams:params];
+    NSString *url = [dict[@"url"] isKindOfClass:NSString.class] ? [dict[@"url"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] : @"";
+    if (url.length == 0) {
+        if (callback) {
+            callback(@{ @"code": @(-1), @"message": @"missing url" });
+        }
+        return;
+    }
+    NSString *stored = [[NSUserDefaults standardUserDefaults] stringForKey:kNetbianDownloadedURLsKey] ?: @"";
+    NSMutableOrderedSet<NSString *> *records = [NSMutableOrderedSet orderedSet];
+    [records addObject:url];
+    for (NSString *value in [stored componentsSeparatedByString:@"\n"]) {
+        NSString *trimmed = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (trimmed.length > 0) {
+            [records addObject:trimmed];
+        }
+    }
+    while (records.count > kNetbianDownloadRecordLimit) {
+        [records removeObjectAtIndex:records.count - 1];
+    }
+    [[NSUserDefaults standardUserDefaults] setObject:[[records array] componentsJoinedByString:@"\n"] forKey:kNetbianDownloadedURLsKey];
+    if (callback) {
+        callback(@{ @"code": @(0) });
+    }
 }
 
 - (void)fetchHtmlWithParams:(id _Nullable)params callback:(KuiklyRenderCallback _Nullable)callback {

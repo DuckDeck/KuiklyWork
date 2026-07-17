@@ -81,6 +81,14 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 downloadNetbianImage(params, callback)
             }
 
+            "getNetbianDownloadRecords" -> {
+                getNetbianDownloadRecords(callback)
+            }
+
+            "markNetbianImageDownloaded" -> {
+                markNetbianImageDownloaded(params, callback)
+            }
+
             "reportDT" -> {
                 reportDT(params)
             }
@@ -201,6 +209,31 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             return
         }
         downloadNetbianImageUrl(url, title, referer, callback, 0)
+    }
+
+    private fun getNetbianDownloadRecords(callback: KuiklyRenderCallback?) {
+        invokeDownloadCallback(
+            callback,
+            mapOf("code" to 0, "urls" to netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty())
+        )
+    }
+
+    private fun markNetbianImageDownloaded(params: String?, callback: KuiklyRenderCallback?) {
+        val url = runCatching { JSONObject(params ?: "{}").optString("url") }.getOrDefault("").trim()
+        if (url.isEmpty()) {
+            invokeDownloadCallback(callback, mapOf("code" to -1, "message" to "missing url"))
+            return
+        }
+        val records = netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty()
+            .lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it != url }
+            .take(MAX_NETBIAN_DOWNLOAD_RECORDS - 1)
+            .toList()
+        netbianDownloadPrefs().edit()
+            .putString(KEY_NETBIAN_DOWNLOADED_URLS, (listOf(url) + records).joinToString("\n"))
+            .apply()
+        invokeDownloadCallback(callback, mapOf("code" to 0))
     }
 
     private fun downloadNetbianImageUrl(
@@ -650,6 +683,13 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
         private const val PREFS_NAME = "netbian_login"
         private const val KEY_NETBIAN_LOGIN_SUCCEEDED = "login_succeeded"
+        private const val DOWNLOAD_PREFS_NAME = "netbian_download_records"
+        private const val KEY_NETBIAN_DOWNLOADED_URLS = "downloaded_urls"
+        private const val MAX_NETBIAN_DOWNLOAD_RECORDS = 500
+
+        private fun netbianDownloadPrefs(): SharedPreferences {
+            return KRApplication.application.getSharedPreferences(DOWNLOAD_PREFS_NAME, Context.MODE_PRIVATE)
+        }
     }
 }
 

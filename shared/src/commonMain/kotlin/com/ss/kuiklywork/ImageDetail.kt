@@ -40,11 +40,13 @@ internal class ImageDetailPage : BasePager() {
     var statusText by observable("")
     var netbianLoggedIn by observable(false)
     var downloading by observable(false)
+    private var listImageUrl = ""
 
     override fun created() {
         super.created()
         titleText = pagerData.params.optString("title", "")
         displayImageUrl = pagerData.params.optString("imageUrl", "")
+        listImageUrl = pagerData.params.optString("listImageUrl", displayImageUrl)
         downloadUrl = displayImageUrl
         detailUrl = pagerData.params.optString("detailUrl", "")
         refreshLoginState()
@@ -109,9 +111,14 @@ internal class ImageDetailPage : BasePager() {
             downloading = false
             val code = response?.optInt("code", -1) ?: -1
             val message = response?.optString("message", "") ?: ""
-            acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast(
-                if (code == 0) message.ifEmpty { "\u5df2\u4fdd\u5b58\u56fe\u7247" } else message.ifEmpty { "\u4e0b\u8f7d\u5931\u8d25" }
-            )
+            val bridgeModule = acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
+            if (code != 0) {
+                bridgeModule.toast(message.ifEmpty { "\u4e0b\u8f7d\u5931\u8d25" })
+                return@downloadNetbianImage
+            }
+            bridgeModule.markNetbianImageDownloaded(listImageUrl.ifEmpty { displayImageUrl }) {
+                bridgeModule.toast(message.ifEmpty { "\u5df2\u4fdd\u5b58\u56fe\u7247" })
+            }
         }
     }
 

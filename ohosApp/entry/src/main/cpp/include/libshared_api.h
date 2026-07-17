@@ -146,14 +146,16 @@ typedef struct {
             } NetbianDetail;
             struct {
               libshared_KType* (*_type)(void);
-              libshared_kref_com_ss_kuiklywork_ImageItem (*ImageItem)(const char* url, const char* title, const char* detailUrl);
+              libshared_kref_com_ss_kuiklywork_ImageItem (*ImageItem)(const char* url, const char* title, const char* detailUrl, libshared_KBoolean downloaded);
               const char* (*get_detailUrl)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
+              libshared_KBoolean (*get_downloaded)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*get_title)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*get_url)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*component1)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*component2)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*component3)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
-              libshared_kref_com_ss_kuiklywork_ImageItem (*copy)(libshared_kref_com_ss_kuiklywork_ImageItem thiz, const char* url, const char* title, const char* detailUrl);
+              libshared_KBoolean (*component4)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
+              libshared_kref_com_ss_kuiklywork_ImageItem (*copy)(libshared_kref_com_ss_kuiklywork_ImageItem thiz, const char* url, const char* title, const char* detailUrl, libshared_KBoolean downloaded);
               libshared_KBoolean (*equals)(libshared_kref_com_ss_kuiklywork_ImageItem thiz, libshared_kref_kotlin_Any other);
               libshared_KInt (*hashCode)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*toString)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);

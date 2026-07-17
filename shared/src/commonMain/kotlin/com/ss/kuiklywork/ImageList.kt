@@ -24,7 +24,8 @@ private const val LIST_HORIZONTAL_PADDING = 6f
 data class ImageItem(
     val url: String,
     val title: String,
-    val detailUrl: String
+    val detailUrl: String,
+    val downloaded: Boolean = false
 )
 
 data class CategoryItem(
@@ -69,6 +70,7 @@ internal class ImageListPage : BasePager() {
     var pageIndex = 0
     private var requestId = 0
     private val categoryCache = mutableMapOf<String, CategoryCache>()
+    private var downloadedImageUrls = emptySet<String>()
 
     val currentCategoryPath: String
         get() = CATEGORY_LIST[selectedCategoryIndex].path
@@ -76,12 +78,33 @@ internal class ImageListPage : BasePager() {
     override fun created() {
         super.created()
         refreshLoginState()
+        loadDownloadedRecords()
         refreshImages()
     }
 
     override fun pageDidAppear() {
         super.pageDidAppear()
         refreshLoginState()
+        loadDownloadedRecords()
+    }
+
+    private fun loadDownloadedRecords() {
+        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).getNetbianDownloadRecords { response ->
+            if (response?.optInt("code", -1) != 0) {
+                return@getNetbianDownloadRecords
+            }
+            downloadedImageUrls = response.optString("urls", "")
+                .lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .toSet()
+            imageItems = applyDownloadedState(imageItems)
+            val updatedCache = categoryCache.mapValues { (_, cache) ->
+                cache.copy(items = applyDownloadedState(cache.items))
+            }
+            categoryCache.clear()
+            categoryCache.putAll(updatedCache)
+        }
     }
 
     fun refreshLoginState() {
@@ -184,13 +207,19 @@ internal class ImageListPage : BasePager() {
                 }
 
                 val mergedItems = if (append) mergeImageItems(imageItems, parsedItems) else parsedItems
-                imageItems = mergedItems.take(MAX_RENDER_ITEMS)
+                imageItems = applyDownloadedState(mergedItems.take(MAX_RENDER_ITEMS))
                 pageIndex = page
                 noMore = parsedItems.size < 10 || mergedItems.size >= MAX_RENDER_ITEMS
                 statusMessage = ""
                 categoryCache[currentCategoryPath] = CategoryCache(imageItems, pageIndex, noMore)
                 bridgeModule.log("ImageList page applied page=$page total=${imageItems.size} noMore=$noMore")
             }
+        }
+    }
+
+    private fun applyDownloadedState(items: List<ImageItem>): List<ImageItem> {
+        return items.map { item ->
+            item.copy(downloaded = item.url in downloadedImageUrls)
         }
     }
 
@@ -406,6 +435,25 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.WallpaperCard(ctx: 
         }
         View {
             attr {
+                height(if (ctx.imageItems.getOrNull(index)?.downloaded == true) 24f else 0f)
+                paddingLeft(7f)
+                paddingRight(7f)
+                backgroundColor(Color(0xCC17803D))
+                borderRadius(12f)
+                absolutePosition(top = 7f, right = 7f)
+                allCenter()
+            }
+            Text {
+                attr {
+                    text(if (ctx.imageItems.getOrNull(index)?.downloaded == true) "已下载" else "")
+                    fontSize(11f)
+                    color(Color.WHITE)
+                    fontWeightBold()
+                }
+            }
+        }
+        View {
+            attr {
                 padding(if (ctx.imageItems.getOrNull(index) == null) 0f else 8f)
             }
             Text {
@@ -422,6 +470,7 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.WallpaperCard(ctx: 
                     val pageData = JSONObject()
                     pageData.put("title", item.title)
                     pageData.put("imageUrl", item.url)
+                    pageData.put("listImageUrl", item.url)
                     pageData.put("detailUrl", item.detailUrl)
                     ctx.acquireModule<RouterModule>(RouterModule.MODULE_NAME)
                         .openPage("imageDetail", pageData)

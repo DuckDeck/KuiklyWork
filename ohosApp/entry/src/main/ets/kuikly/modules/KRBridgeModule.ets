@@ -7,6 +7,7 @@ import util from '@ohos.util';
 import fs from '@ohos.file.fs';
 import { fileUri } from '@kit.CoreFileKit';
 import { http } from '@kit.NetworkKit';
+import { preferences } from '@kit.ArkData';
 
 interface FetchHtmlResult {
   code: number;
@@ -29,6 +30,8 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
   static readonly DATE_FORMATTER = "dateFormatter";
   static readonly READ_ASSET_FILE = "readAssetFile";
   static readonly FETCH_HTML = "fetchHtml";
+  static readonly GET_NETBIAN_DOWNLOAD_RECORDS = "getNetbianDownloadRecords";
+  static readonly MARK_NETBIAN_IMAGE_DOWNLOADED = "markNetbianImageDownloaded";
 
   syncMode(): boolean {
     return false;
@@ -84,6 +87,14 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
       }
       case KRBridgeModule.FETCH_HTML: {
         this.fetchHtml(params, callback);
+        break;
+      }
+      case KRBridgeModule.GET_NETBIAN_DOWNLOAD_RECORDS: {
+        this.getNetbianDownloadRecords(callback);
+        break;
+      }
+      case KRBridgeModule.MARK_NETBIAN_IMAGE_DOWNLOADED: {
+        this.markNetbianImageDownloaded(params, callback);
         break;
       }
       default:
@@ -172,6 +183,44 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
       console.info(`[KuiklyWork] fetchHtml success, length: ${body.length}`);
       this.callbackFetchHtml(callback, { "code": 0, "body": body });
     });
+  }
+
+  private getNetbianDownloadRecords(callback: KuiklyRenderCallback) {
+    try {
+      const store = preferences.getPreferencesSync(getContext(this), { name: 'netbian_download_records' });
+      const urls = store.getSync('downloaded_urls', '') as string;
+      callback({ "code": 0, "urls": urls });
+    } catch (e) {
+      console.error(`[KuiklyWork] getNetbianDownloadRecords failed: ${e}`);
+      callback({ "code": -1, "message": `${e}` });
+    }
+  }
+
+  private markNetbianImageDownloaded(params: KRAny, callback: KuiklyRenderCallback) {
+    const url = this.readUrl(params).trim();
+    if (!url) {
+      callback({ "code": -1, "message": "missing url" });
+      return;
+    }
+    try {
+      const store = preferences.getPreferencesSync(getContext(this), { name: 'netbian_download_records' });
+      const stored = store.getSync('downloaded_urls', '') as string;
+      const urls = [url, ...stored.split('\n').map(value => value.trim()).filter(value => value.length > 0 && value !== url)]
+        .slice(0, 500)
+        .join('\n');
+      store.putSync('downloaded_urls', urls);
+      store.flush((err: BusinessError) => {
+        if (err) {
+          console.error(`[KuiklyWork] markNetbianImageDownloaded flush failed: ${err.message}`);
+          callback({ "code": -1, "message": err.message });
+          return;
+        }
+        callback({ "code": 0 });
+      });
+    } catch (e) {
+      console.error(`[KuiklyWork] markNetbianImageDownloaded failed: ${e}`);
+      callback({ "code": -1, "message": `${e}` });
+    }
   }
 
   private readUrl(params: KRAny): string {

@@ -65,10 +65,22 @@ typedef struct {
 } libshared_kref_kotlin_ULong;
 typedef struct {
   libshared_KNativePtr pinned;
-} libshared_kref_com_ss_kuiklywork_ImageItem;
+} libshared_kref_com_ss_kuiklywork_NetbianDetail;
 typedef struct {
   libshared_KNativePtr pinned;
 } libshared_kref_kotlin_Any;
+typedef struct {
+  libshared_KNativePtr pinned;
+} libshared_kref_com_ss_kuiklywork_ImageItem;
+typedef struct {
+  libshared_KNativePtr pinned;
+} libshared_kref_com_ss_kuiklywork_CategoryItem;
+typedef struct {
+  libshared_KNativePtr pinned;
+} libshared_kref_com_ss_kuiklywork_CategoryCache;
+typedef struct {
+  libshared_KNativePtr pinned;
+} libshared_kref_kotlin_collections_List;
 
 
 typedef struct {
@@ -110,16 +122,68 @@ typedef struct {
           struct {
             struct {
               libshared_KType* (*_type)(void);
-              libshared_kref_com_ss_kuiklywork_ImageItem (*ImageItem)(const char* url, const char* title);
+              libshared_kref_com_ss_kuiklywork_NetbianDetail (*NetbianDetail)(const char* imageUrl, const char* downloadUrl, const char* title, const char* categoryName, const char* categoryUrl, const char* size, const char* fileSize, const char* updatedAt);
+              const char* (*get_categoryName)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*get_categoryUrl)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*get_downloadUrl)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*get_fileSize)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*get_imageUrl)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*get_size)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*get_title)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*get_updatedAt)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*component1)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*component2)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*component3)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*component4)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*component5)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*component6)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*component7)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*component8)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              libshared_kref_com_ss_kuiklywork_NetbianDetail (*copy)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz, const char* imageUrl, const char* downloadUrl, const char* title, const char* categoryName, const char* categoryUrl, const char* size, const char* fileSize, const char* updatedAt);
+              libshared_KBoolean (*equals)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz, libshared_kref_kotlin_Any other);
+              libshared_KInt (*hashCode)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+              const char* (*toString)(libshared_kref_com_ss_kuiklywork_NetbianDetail thiz);
+            } NetbianDetail;
+            struct {
+              libshared_KType* (*_type)(void);
+              libshared_kref_com_ss_kuiklywork_ImageItem (*ImageItem)(const char* url, const char* title, const char* detailUrl);
+              const char* (*get_detailUrl)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*get_title)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*get_url)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*component1)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*component2)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
-              libshared_kref_com_ss_kuiklywork_ImageItem (*copy)(libshared_kref_com_ss_kuiklywork_ImageItem thiz, const char* url, const char* title);
+              const char* (*component3)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
+              libshared_kref_com_ss_kuiklywork_ImageItem (*copy)(libshared_kref_com_ss_kuiklywork_ImageItem thiz, const char* url, const char* title, const char* detailUrl);
               libshared_KBoolean (*equals)(libshared_kref_com_ss_kuiklywork_ImageItem thiz, libshared_kref_kotlin_Any other);
               libshared_KInt (*hashCode)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
               const char* (*toString)(libshared_kref_com_ss_kuiklywork_ImageItem thiz);
             } ImageItem;
+            struct {
+              libshared_KType* (*_type)(void);
+              libshared_kref_com_ss_kuiklywork_CategoryItem (*CategoryItem)(const char* name, const char* path);
+              const char* (*get_name)(libshared_kref_com_ss_kuiklywork_CategoryItem thiz);
+              const char* (*get_path)(libshared_kref_com_ss_kuiklywork_CategoryItem thiz);
+              const char* (*component1)(libshared_kref_com_ss_kuiklywork_CategoryItem thiz);
+              const char* (*component2)(libshared_kref_com_ss_kuiklywork_CategoryItem thiz);
+              libshared_kref_com_ss_kuiklywork_CategoryItem (*copy)(libshared_kref_com_ss_kuiklywork_CategoryItem thiz, const char* name, const char* path);
+              libshared_KBoolean (*equals)(libshared_kref_com_ss_kuiklywork_CategoryItem thiz, libshared_kref_kotlin_Any other);
+              libshared_KInt (*hashCode)(libshared_kref_com_ss_kuiklywork_CategoryItem thiz);
+              const char* (*toString)(libshared_kref_com_ss_kuiklywork_CategoryItem thiz);
+            } CategoryItem;
+            struct {
+              libshared_KType* (*_type)(void);
+              libshared_kref_com_ss_kuiklywork_CategoryCache (*CategoryCache)(libshared_kref_kotlin_collections_List items, libshared_KInt pageIndex, libshared_KBoolean noMore);
+              libshared_kref_kotlin_collections_List (*get_items)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz);
+              libshared_KBoolean (*get_noMore)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz);
+              libshared_KInt (*get_pageIndex)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz);
+              libshared_kref_kotlin_collections_List (*component1)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz);
+              libshared_KInt (*component2)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz);
+              libshared_KBoolean (*component3)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz);
+              libshared_kref_com_ss_kuiklywork_CategoryCache (*copy)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz, libshared_kref_kotlin_collections_List items, libshared_KInt pageIndex, libshared_KBoolean noMore);
+              libshared_KBoolean (*equals)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz, libshared_kref_kotlin_Any other);
+              libshared_KInt (*hashCode)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz);
+              const char* (*toString)(libshared_kref_com_ss_kuiklywork_CategoryCache thiz);
+            } CategoryCache;
           } kuiklywork;
         } ss;
       } com;

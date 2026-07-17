@@ -24,7 +24,8 @@
         "buildOption": {
           "strictMode": {
             "useNormalizedOHMUrl": true
-          }
+          },
+          "nativeCompiler": "BiSheng"
         },
         "targetSdkVersion": "6.1.1(24)"
       }

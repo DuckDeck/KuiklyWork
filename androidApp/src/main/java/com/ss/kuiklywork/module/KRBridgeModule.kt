@@ -157,8 +157,8 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                     setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
                     setRequestProperty("Accept-Encoding", "identity")
                     setRequestProperty("Connection", "keep-alive")
-                    setRequestProperty("Referer", "https://pic.netbian.com/")
-                    netbianCookieFor(requestUrl)?.also {
+                    setRequestProperty("Referer", browserRefererFor(requestUrl))
+                    browserCookieFor(requestUrl)?.also {
                         setRequestProperty("Cookie", it)
                     }
                 }
@@ -283,7 +283,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                     setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
                     setRequestProperty("Referer", referer)
                     setRequestProperty("Accept-Encoding", "identity")
-                    netbianCookieFor(url)?.also {
+                    browserCookieFor(url)?.also {
                         setRequestProperty("Cookie", it)
                     }
                 }
@@ -429,12 +429,19 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             ?: ""
     }
 
-    private fun netbianCookieFor(requestUrl: String): String? {
+    private fun browserCookieFor(requestUrl: String): String? {
         val host = runCatching { URL(requestUrl).host }.getOrNull() ?: return null
-        if (!host.endsWith(NETBIAN_HOST)) {
-            return null
+        val cookieUrl = when {
+            host.endsWith(NETBIAN_HOST) -> NETBIAN_HOME_URL
+            host.endsWith(NNCOS_HOST) -> NNCOS_HOME_URL
+            else -> return null
         }
-        return CookieManager.getInstance().getCookie(NETBIAN_HOME_URL)?.takeIf { it.isNotBlank() }
+        return CookieManager.getInstance().getCookie(cookieUrl)?.takeIf { it.isNotBlank() }
+    }
+
+    private fun browserRefererFor(requestUrl: String): String {
+        val host = runCatching { URL(requestUrl).host }.getOrDefault("")
+        return if (host.endsWith(NNCOS_HOST)) NNCOS_HOME_URL else NETBIAN_HOME_URL
     }
 
     private fun safeFileName(title: String): String {
@@ -646,6 +653,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         private const val TAG = "KuiklyWork"
         private const val NETBIAN_HOST = "pic.netbian.com"
         private const val NETBIAN_HOME_URL = "https://pic.netbian.com/"
+        private const val NNCOS_HOST = "nncos.com"
         private const val NNCOS_HOME_URL = "https://www.nncos.com/"
         private var netbianLoginSucceeded = false
         private var nncosLoginSucceeded = false

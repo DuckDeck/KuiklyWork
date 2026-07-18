@@ -6,6 +6,8 @@ import com.ss.kuiklywork.base.setTimeout
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewBuilder
+import com.tencent.kuikly.core.module.RouterModule
+import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.Image
 import com.tencent.kuikly.core.views.Scroller
@@ -25,7 +27,8 @@ internal data class CosImageItem(
     val title: String,
     val detailUrl: String,
     val categoryName: String,
-    val publishedAt: String
+    val publishedAt: String,
+    val downloaded: Boolean = false
 )
 
 private data class CosPageResult(
@@ -65,6 +68,7 @@ internal class CosImageListPage : BasePager() {
     private var pageIndex = 0
     private var requestId = 0
     private val categoryCache = mutableMapOf<String, CosCategoryCache>()
+    private var downloadedDetailUrls = emptySet<String>()
 
     private val currentCategory: CosCategory
         get() = COS_CATEGORY_LIST[selectedCategoryIndex]
@@ -72,12 +76,38 @@ internal class CosImageListPage : BasePager() {
     override fun created() {
         super.created()
         refreshLoginState()
-        refreshImages()
+        loadDownloadedRecords { refreshImages() }
     }
 
     override fun pageDidAppear() {
         super.pageDidAppear()
         refreshLoginState()
+        loadDownloadedRecords()
+    }
+
+    private fun loadDownloadedRecords(afterLoad: (() -> Unit)? = null) {
+        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).getImageDownloadRecords { response ->
+            if (response?.optInt("code", -1) == 0) {
+                downloadedDetailUrls = response.optString("urls", "")
+                    .lineSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .toSet()
+                updateDownloadedItems()
+            }
+            afterLoad?.invoke()
+        }
+    }
+
+    private fun updateDownloadedItems() {
+        imageItems = imageItems.map { item ->
+            item.copy(downloaded = item.detailUrl in downloadedDetailUrls)
+        }
+        categoryCache.entries.forEach { entry ->
+            entry.setValue(entry.value.copy(items = entry.value.items.map { item ->
+                item.copy(downloaded = item.detailUrl in downloadedDetailUrls)
+            }))
+        }
     }
 
     private fun refreshLoginState() {
@@ -165,7 +195,8 @@ internal class CosImageListPage : BasePager() {
                     }
                     return@setTimeout
                 }
-                val merged = if (append) mergeCosImageItems(imageItems, result.items) else result.items
+                val merged = (if (append) mergeCosImageItems(imageItems, result.items) else result.items)
+                    .map { item -> item.copy(downloaded = item.detailUrl in downloadedDetailUrls) }
                 imageItems = merged.take(NNCOS_MAX_RENDER_ITEMS)
                 pageIndex = page
                 noMore = !result.hasNextPage || merged.size >= NNCOS_MAX_RENDER_ITEMS
@@ -415,6 +446,17 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(ctx: C
             height(if (item == null) 0f else 220f)
             marginBottom(if (item == null) 0f else 8f)
         }
+        event {
+            click {
+                val item = ctx.imageItems.getOrNull(index) ?: return@click
+                val pageData = JSONObject()
+                pageData.put("title", item.title)
+                pageData.put("detailUrl", item.detailUrl)
+                pageData.put("imageUrl", item.imageUrl)
+                ctx.acquireModule<RouterModule>(RouterModule.MODULE_NAME)
+                    .openPage("cosImageDetail", pageData)
+            }
+        }
         Image {
             attr {
                 src(ctx.imageItems.getOrNull(index)?.imageUrl ?: "")
@@ -448,6 +490,20 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(ctx: C
                     color(Color(0xFFE8E8E8))
                     lines(1)
                 }
+            }
+        }
+        Text {
+            attr {
+                val item = ctx.imageItems.getOrNull(index)
+                text(if (item?.downloaded == true) "\u5df2\u4e0b\u8f7d" else "")
+                width(if (item?.downloaded == true) 52f else 0f)
+                height(if (item?.downloaded == true) 24f else 0f)
+                backgroundColor(Color(0xCC198754))
+                borderRadius(4f)
+                fontSize(11f)
+                color(Color.WHITE)
+                textAlignCenter()
+                absolutePosition(top = 7f, right = 7f)
             }
         }
         View {

@@ -13,6 +13,7 @@ import android.webkit.CookieManager
 import android.widget.ImageView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestBuilder
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.model.GlideUrl
 import com.bumptech.glide.load.model.LazyHeaders
 import com.bumptech.glide.request.target.CustomTarget
@@ -80,6 +81,8 @@ class KRImageAdapter(val context: Context) : IKRImageAdapter {
             }
         }
         requestBuilder
+            .diskCacheStrategy(DiskCacheStrategy.ALL)
+            .skipMemoryCache(false)
             .into(object : CustomTarget<Drawable>() {
 
                 override fun onLoadCleared(placeholder: Drawable?) {
@@ -101,21 +104,31 @@ class KRImageAdapter(val context: Context) : IKRImageAdapter {
     }
 
     private fun imageModel(src: String): Any {
-        if (!src.startsWith("https://pic.netbian.com/")) {
-            return src
+        val site = when {
+            src.startsWith("https://pic.netbian.com/") -> ImageSite(
+                name = "netbian",
+                referer = "https://pic.netbian.com/"
+            )
+            src.startsWith("https://img.nncos.com/") -> ImageSite(
+                name = "nncos",
+                referer = "https://www.nncos.com/"
+            )
+            else -> return src
         }
-        Log.i("KuiklyWork", "load netbian image with headers: $src")
+        Log.i("KuiklyWork", "load ${site.name} image with headers: $src")
         return GlideUrl(
             src,
             LazyHeaders.Builder().apply {
                 addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
-                addHeader("Referer", "https://pic.netbian.com/")
-                CookieManager.getInstance().getCookie("https://pic.netbian.com/")?.takeIf { it.isNotBlank() }?.also {
+                addHeader("Referer", site.referer)
+                CookieManager.getInstance().getCookie(site.referer)?.takeIf { it.isNotBlank() }?.also {
                     addHeader("Cookie", it)
                 }
             }.build()
         )
     }
+
+    private data class ImageSite(val name: String, val referer: String)
     private fun loadFromBase64(
         imageLoadOption: HRImageLoadOption,
         callback: (drawable: Drawable?) -> Unit,

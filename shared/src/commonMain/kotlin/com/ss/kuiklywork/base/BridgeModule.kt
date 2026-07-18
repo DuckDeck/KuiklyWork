@@ -111,6 +111,19 @@ internal class BridgeModule : Module() {
         callNativeMethod(MARK_NETBIAN_IMAGE_DOWNLOADED, methodArgs, responseCallbackFn)
     }
 
+    // The native downloader stores image URLs independently of their source site.
+    fun downloadImage(url: String, title: String, referer: String = "", responseCallbackFn: CallbackFn) {
+        downloadNetbianImage(url, title, referer, responseCallbackFn)
+    }
+
+    fun getImageDownloadRecords(responseCallbackFn: CallbackFn) {
+        getNetbianDownloadRecords(responseCallbackFn)
+    }
+
+    fun markImageDownloaded(url: String, responseCallbackFn: CallbackFn? = null) {
+        markNetbianImageDownloaded(url, responseCallbackFn)
+    }
+
     fun openPage(
         url: String,
         closeCurPage: Boolean = false,

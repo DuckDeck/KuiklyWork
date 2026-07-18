@@ -109,7 +109,7 @@ class KRImageAdapter(val context: Context) : IKRImageAdapter {
                 name = "netbian",
                 referer = "https://pic.netbian.com/"
             )
-            src.startsWith("https://img.nncos.com/") -> ImageSite(
+            src.startsWith("https://img.nncos.com/") || src.startsWith("https://nncos.us/nnpic2/") -> ImageSite(
                 name = "nncos",
                 referer = "https://www.nncos.com/"
             )

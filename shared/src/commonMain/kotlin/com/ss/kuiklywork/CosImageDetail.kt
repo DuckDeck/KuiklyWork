@@ -265,10 +265,15 @@ private fun parseNncosDetail(html: String): CosDetailResult {
                 ?: tag.value.extractCosDetailAttribute("src")
         }
         .map { it.toAbsoluteCosDetailUrl() }
-        .filter { it.contains("img.nncos.com/", ignoreCase = true) }
+        .filter { it.isNncosDetailImageUrl() }
         .filter { seenUrls.add(it) }
         .toList()
     return CosDetailResult(title, imageUrls)
+}
+
+private fun String.isNncosDetailImageUrl(): Boolean {
+    return contains("img.nncos.com/", ignoreCase = true) ||
+        contains("nncos.us/nnpic2/", ignoreCase = true)
 }
 
 private fun String.extractCosDetailAttribute(name: String): String? {

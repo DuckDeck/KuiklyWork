@@ -502,17 +502,22 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(
                 }
             }
         }
-        Text {
+        View {
             attr {
-                text(if (item?.downloaded == true) "\u5df2\u4e0b\u8f7d" else "")
                 width(if (item?.downloaded == true) 52f else 0f)
                 height(if (item?.downloaded == true) 24f else 0f)
                 backgroundColor(Color(0xCC198754))
                 borderRadius(4f)
-                fontSize(11f)
-                color(Color.WHITE)
-                textAlignCenter()
                 absolutePosition(top = 7f, right = 7f)
+                allCenter()
+            }
+            Text {
+                attr {
+                    text(if (item?.downloaded == true) "\u5df2\u4e0b\u8f7d" else "")
+                    fontSize(11f)
+                    color(Color.WHITE)
+                    lines(1)
+                }
             }
         }
         View {

@@ -20,5 +20,8 @@
         <activity
             android:name=".NetbianLoginActivity"
             android:exported="false" />
+        <activity
+            android:name=".NncosLoginActivity"
+            android:exported="false" />
     </application>
 </manifest>

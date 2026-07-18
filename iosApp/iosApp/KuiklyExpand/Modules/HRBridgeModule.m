@@ -10,8 +10,15 @@ static NSString * const kNetbianLoginSucceededKey = @"netbian_login_succeeded";
 static NSString * const kNetbianDownloadedURLsKey = @"netbian_downloaded_urls";
 static const NSUInteger kNetbianDownloadRecordLimit = 500;
 static KuiklyRenderCallback gNetbianLoginCallback = nil;
+static NSString * const kNncosHomeURL = @"https://www.nncos.com/";
+static NSString * const kNncosLoginURL = @"https://www.nncos.com/login/?redirect_to=https%3A%2F%2Fwww.nncos.com%2F";
+static NSString * const kNncosLoginSucceededKey = @"nncos_login_succeeded";
+static KuiklyRenderCallback gNncosLoginCallback = nil;
 
 @interface NetbianLoginViewController : UIViewController <WKNavigationDelegate>
+@end
+
+@interface NncosLoginViewController : UIViewController <WKNavigationDelegate>
 @end
 
 @interface HRBridgeModule ()
@@ -23,6 +30,12 @@ static KuiklyRenderCallback gNetbianLoginCallback = nil;
 + (BOOL)isNetbianLoginSuccessURL:(NSString *)urlString;
 + (NSString *)netbianCookieHeader;
 + (void)syncWKNetbianCookiesWithCompletion:(dispatch_block_t)completion;
++ (void)finishNncosLoginWithSuccess:(BOOL)success message:(NSString *)message;
++ (void)markNncosLoginSucceeded;
++ (BOOL)isNncosLoggedIn;
++ (BOOL)hasNncosCookie;
++ (BOOL)hasNncosLoginCookie;
++ (void)syncWKNncosCookiesWithCompletion:(dispatch_block_t)completion;
 @end
 
 @interface NetbianLoginViewController ()
@@ -132,6 +145,70 @@ static KuiklyRenderCallback gNetbianLoginCallback = nil;
 
 @end
 
+@interface NncosLoginViewController ()
+@property (nonatomic, strong) WKWebView *webView;
+@property (nonatomic, assign) BOOL callbackSent;
+@end
+
+@implementation NncosLoginViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"NNCOS Login";
+    self.view.backgroundColor = UIColor.whiteColor;
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Close" style:UIBarButtonItemStylePlain target:self action:@selector(closeTapped)];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Done" style:UIBarButtonItemStylePlain target:self action:@selector(doneTapped)];
+
+    WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+    configuration.websiteDataStore = WKWebsiteDataStore.defaultDataStore;
+    self.webView = [[WKWebView alloc] initWithFrame:self.view.bounds configuration:configuration];
+    self.webView.navigationDelegate = self;
+    self.webView.customUserAgent = @"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:self.webView];
+    [self.webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:kNncosLoginURL]]];
+}
+
+- (void)closeTapped {
+    [self finishWithCurrentState:@"login page closed"];
+}
+
+- (void)doneTapped {
+    [self finishWithCurrentState:@"login state checked"];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    if (!self.callbackSent && (self.isBeingDismissed || self.navigationController.isBeingDismissed)) {
+        [self finishWithCurrentState:@"login page dismissed"];
+    }
+}
+
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    NSString *scheme = navigationAction.request.URL.scheme.lowercaseString ?: @"";
+    decisionHandler(([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]) ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
+}
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    [self syncWKCookiesWithCompletion:nil];
+}
+
+- (void)finishWithCurrentState:(NSString *)message {
+    [self syncWKCookiesWithCompletion:^{
+        if (!self.callbackSent) {
+            [HRBridgeModule finishNncosLoginWithSuccess:[HRBridgeModule isNncosLoggedIn] message:message];
+            self.callbackSent = YES;
+        }
+        [self dismissViewControllerAnimated:YES completion:nil];
+    }];
+}
+
+- (void)syncWKCookiesWithCompletion:(dispatch_block_t)completion {
+    [HRBridgeModule syncWKNncosCookiesWithCompletion:completion];
+}
+
+@end
+
 #define REQ_PARAM_KEY @"reqParam"
 #define CMD_KEY @"cmd"
 #define FROM_HIPPY_RENDER @"from_hippy_render"
@@ -166,6 +243,14 @@ static KuiklyRenderCallback gNetbianLoginCallback = nil;
     }
     if ([method isEqualToString:@"getNetbianLoginState"]) {
         [self getNetbianLoginStateWithCallback:callback];
+        return nil;
+    }
+    if ([method isEqualToString:@"openNncosLogin"]) {
+        [self openNncosLoginWithCallback:callback];
+        return nil;
+    }
+    if ([method isEqualToString:@"getNncosLoginState"]) {
+        [self getNncosLoginStateWithCallback:callback];
         return nil;
     }
     if ([method isEqualToString:@"downloadNetbianImage"]) {
@@ -284,6 +369,26 @@ static KuiklyRenderCallback gNetbianLoginCallback = nil;
     [HRBridgeModule syncWKNetbianCookiesWithCompletion:^{
         if (callback) {
             callback(@{@"code": @(0), @"isLoggedIn": @([HRBridgeModule isNetbianLoggedIn]), @"hasCookie": @([HRBridgeModule hasNetbianCookie])});
+        }
+    }];
+}
+
+- (void)openNncosLoginWithCallback:(KuiklyRenderCallback _Nullable)callback {
+    if (gNncosLoginCallback) {
+        gNncosLoginCallback(@{ @"code": @(-1), @"isLoggedIn": @([HRBridgeModule isNncosLoggedIn]), @"message": @"login replaced" });
+    }
+    gNncosLoginCallback = [callback copy];
+    UIViewController *presentingViewController = [self topViewController];
+    NncosLoginViewController *loginViewController = [[NncosLoginViewController alloc] init];
+    UINavigationController *navigationController = [[UINavigationController alloc] initWithRootViewController:loginViewController];
+    navigationController.modalPresentationStyle = UIModalPresentationFullScreen;
+    [presentingViewController presentViewController:navigationController animated:YES completion:nil];
+}
+
+- (void)getNncosLoginStateWithCallback:(KuiklyRenderCallback _Nullable)callback {
+    [HRBridgeModule syncWKNncosCookiesWithCompletion:^{
+        if (callback) {
+            callback(@{ @"code": @(0), @"isLoggedIn": @([HRBridgeModule isNncosLoggedIn]), @"hasCookie": @([HRBridgeModule hasNncosCookie]) });
         }
     }];
 }
@@ -489,6 +594,64 @@ static KuiklyRenderCallback gNetbianLoginCallback = nil;
     [WKWebsiteDataStore.defaultDataStore.httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
         for (NSHTTPCookie *cookie in cookies) {
             if ([cookie.domain containsString:@"pic.netbian.com"]) {
+                [[NSHTTPCookieStorage sharedHTTPCookieStorage] setCookie:cookie];
+            }
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion();
+            }
+        });
+    }];
+}
+
++ (void)finishNncosLoginWithSuccess:(BOOL)success message:(NSString *)message {
+    if (success) {
+        [self markNncosLoginSucceeded];
+    }
+    if (gNncosLoginCallback) {
+        gNncosLoginCallback(@{ @"code": @(0), @"isLoggedIn": @(success || [self isNncosLoggedIn]), @"message": message ?: @"" });
+        gNncosLoginCallback = nil;
+    }
+}
+
++ (void)markNncosLoginSucceeded {
+    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kNncosLoginSucceededKey];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
++ (BOOL)isNncosLoggedIn {
+    if ([self hasNncosLoginCookie]) {
+        [self markNncosLoginSucceeded];
+        return YES;
+    }
+    if (![self hasNncosCookie]) {
+        [[NSUserDefaults standardUserDefaults] setBool:NO forKey:kNncosLoginSucceededKey];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        return NO;
+    }
+    return [[NSUserDefaults standardUserDefaults] boolForKey:kNncosLoginSucceededKey];
+}
+
++ (BOOL)hasNncosCookie {
+    NSURL *url = [NSURL URLWithString:kNncosHomeURL];
+    return [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url].count > 0;
+}
+
++ (BOOL)hasNncosLoginCookie {
+    NSURL *url = [NSURL URLWithString:kNncosHomeURL];
+    for (NSHTTPCookie *cookie in [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url]) {
+        if ([cookie.name.lowercaseString hasPrefix:@"wordpress_logged_in_"] && cookie.value.length > 0) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
++ (void)syncWKNncosCookiesWithCompletion:(dispatch_block_t)completion {
+    [WKWebsiteDataStore.defaultDataStore.httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
+        for (NSHTTPCookie *cookie in cookies) {
+            if ([cookie.domain containsString:@"nncos.com"]) {
                 [[NSHTTPCookieStorage sharedHTTPCookieStorage] setCookie:cookie];
             }
         }

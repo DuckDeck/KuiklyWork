@@ -16,6 +16,7 @@ internal class RouterPage : BasePager() {
 
     private val items = listOf(
         ListItem("彼岸图网", "imageList"),
+        ListItem("半次元图", "cosImageList"),
 //        ListItem("图片浏览器", "detail"),
 //        ListItem("壁纸精选", "detail"),
 //        ListItem("风景壁纸", "detail"),

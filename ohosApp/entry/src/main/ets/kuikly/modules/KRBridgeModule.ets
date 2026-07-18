@@ -8,6 +8,8 @@ import fs from '@ohos.file.fs';
 import { fileUri } from '@kit.CoreFileKit';
 import { http } from '@kit.NetworkKit';
 import { preferences } from '@kit.ArkData';
+import router from '@ohos.router';
+import web_webview from '@ohos.web.webview';
 
 interface FetchHtmlResult {
   code: number;
@@ -30,6 +32,8 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
   static readonly DATE_FORMATTER = "dateFormatter";
   static readonly READ_ASSET_FILE = "readAssetFile";
   static readonly FETCH_HTML = "fetchHtml";
+  static readonly OPEN_NNCOS_LOGIN = "openNncosLogin";
+  static readonly GET_NNCOS_LOGIN_STATE = "getNncosLoginState";
   static readonly GET_NETBIAN_DOWNLOAD_RECORDS = "getNetbianDownloadRecords";
   static readonly MARK_NETBIAN_IMAGE_DOWNLOADED = "markNetbianImageDownloaded";
 
@@ -87,6 +91,21 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
       }
       case KRBridgeModule.FETCH_HTML: {
         this.fetchHtml(params, callback);
+        break;
+      }
+      case KRBridgeModule.OPEN_NNCOS_LOGIN: {
+        try {
+          router.pushUrl({ url: 'pages/NncosLogin' });
+          callback({ "code": 0, "isLoggedIn": this.isNncosLoggedIn(), "message": "login page opened" });
+        } catch (e) {
+          console.error(`[KuiklyWork] open NNCOS login failed: ${e}`);
+          callback({ "code": -1, "isLoggedIn": this.isNncosLoggedIn(), "message": "open login page failed" });
+        }
+        break;
+      }
+      case KRBridgeModule.GET_NNCOS_LOGIN_STATE: {
+        const hasCookie = this.hasNncosCookie();
+        callback({ "code": 0, "isLoggedIn": this.isNncosLoggedIn(), "hasCookie": hasCookie });
         break;
       }
       case KRBridgeModule.GET_NETBIAN_DOWNLOAD_RECORDS: {
@@ -183,6 +202,25 @@ export class KRBridgeModule extends KuiklyRenderBaseModule {
       console.info(`[KuiklyWork] fetchHtml success, length: ${body.length}`);
       this.callbackFetchHtml(callback, { "code": 0, "body": body });
     });
+  }
+
+  private hasNncosCookie(): boolean {
+    try {
+      return web_webview.WebCookieManager.fetchCookieSync('https://www.nncos.com/').length > 0;
+    } catch (e) {
+      console.error(`[KuiklyWork] read NNCOS cookie failed: ${e}`);
+      return false;
+    }
+  }
+
+  private isNncosLoggedIn(): boolean {
+    try {
+      const cookie = web_webview.WebCookieManager.fetchCookieSync('https://www.nncos.com/');
+      return cookie.split(';').some(value => value.trim().toLowerCase().startsWith('wordpress_logged_in_'));
+    } catch (e) {
+      console.error(`[KuiklyWork] read NNCOS login state failed: ${e}`);
+      return false;
+    }
   }
 
   private getNetbianDownloadRecords(callback: KuiklyRenderCallback) {

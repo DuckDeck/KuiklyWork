@@ -18,6 +18,7 @@ import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
 import com.ss.kuiklywork.KRApplication
 import com.ss.kuiklywork.KuiklyRenderActivity
 import com.ss.kuiklywork.NetbianLoginActivity
+import com.ss.kuiklywork.NncosLoginActivity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -75,6 +76,14 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
             "getNetbianLoginState" -> {
                 getNetbianLoginState(callback)
+            }
+
+            "openNncosLogin" -> {
+                openNncosLogin(callback)
+            }
+
+            "getNncosLoginState" -> {
+                getNncosLoginState(callback)
             }
 
             "downloadNetbianImage" -> {
@@ -215,6 +224,26 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         invokeDownloadCallback(
             callback,
             mapOf("code" to 0, "urls" to netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty())
+        )
+    }
+
+    private fun openNncosLogin(callback: KuiklyRenderCallback?) {
+        NncosLoginCallbackStore.replace(callback)
+        val ctx = activity ?: context ?: KRApplication.application
+        val intent = Intent(ctx, NncosLoginActivity::class.java)
+        if (ctx !is android.app.Activity) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(intent)
+    }
+
+    private fun getNncosLoginState(callback: KuiklyRenderCallback?) {
+        callback?.invoke(
+            mapOf(
+                "code" to 0,
+                "isLoggedIn" to isNncosLoggedIn(),
+                "hasCookie" to hasNncosCookie()
+            )
         )
     }
 
@@ -617,7 +646,9 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         private const val TAG = "KuiklyWork"
         private const val NETBIAN_HOST = "pic.netbian.com"
         private const val NETBIAN_HOME_URL = "https://pic.netbian.com/"
+        private const val NNCOS_HOME_URL = "https://www.nncos.com/"
         private var netbianLoginSucceeded = false
+        private var nncosLoginSucceeded = false
 
         fun markNetbianLoginSucceeded() {
             netbianLoginSucceeded = true
@@ -677,12 +708,48 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 url.contains("/e/member/cp/", ignoreCase = true)
         }
 
+        fun markNncosLoginSucceeded() {
+            nncosLoginSucceeded = true
+            nncosPrefs().edit().putBoolean(KEY_NNCOS_LOGIN_SUCCEEDED, true).apply()
+        }
+
+        fun isNncosLoggedIn(): Boolean {
+            if (hasNncosLoginCookie()) {
+                markNncosLoginSucceeded()
+                return true
+            }
+            if (!hasNncosCookie()) {
+                nncosLoginSucceeded = false
+                nncosPrefs().edit().putBoolean(KEY_NNCOS_LOGIN_SUCCEEDED, false).apply()
+                return false
+            }
+            return nncosLoginSucceeded || nncosPrefs().getBoolean(KEY_NNCOS_LOGIN_SUCCEEDED, false)
+        }
+
+        fun hasNncosLoginCookie(): Boolean {
+            val cookie = CookieManager.getInstance().getCookie(NNCOS_HOME_URL) ?: return false
+            return cookie.split(";").any { value ->
+                val key = value.substringBefore("=").trim().lowercase()
+                key.startsWith("wordpress_logged_in_")
+            }
+        }
+
+        fun hasNncosCookie(): Boolean {
+            return !CookieManager.getInstance().getCookie(NNCOS_HOME_URL).isNullOrBlank()
+        }
+
         private fun netbianPrefs(): SharedPreferences {
             return KRApplication.application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         }
 
+        private fun nncosPrefs(): SharedPreferences {
+            return KRApplication.application.getSharedPreferences(NNCOS_PREFS_NAME, Context.MODE_PRIVATE)
+        }
+
         private const val PREFS_NAME = "netbian_login"
         private const val KEY_NETBIAN_LOGIN_SUCCEEDED = "login_succeeded"
+        private const val NNCOS_PREFS_NAME = "nncos_login"
+        private const val KEY_NNCOS_LOGIN_SUCCEEDED = "login_succeeded"
         private const val DOWNLOAD_PREFS_NAME = "netbian_download_records"
         private const val KEY_NETBIAN_DOWNLOADED_URLS = "downloaded_urls"
         private const val MAX_NETBIAN_DOWNLOAD_RECORDS = 500
@@ -698,6 +765,20 @@ object NetbianLoginCallbackStore {
 
     fun replace(newCallback: KuiklyRenderCallback?) {
         callback?.invoke(mapOf("code" to -1, "isLoggedIn" to KRBridgeModule.isNetbianLoggedIn(), "message" to "login replaced"))
+        callback = newCallback
+    }
+
+    fun finish(isLoggedIn: Boolean, message: String = "") {
+        callback?.invoke(mapOf("code" to 0, "isLoggedIn" to isLoggedIn, "message" to message))
+        callback = null
+    }
+}
+
+object NncosLoginCallbackStore {
+    private var callback: KuiklyRenderCallback? = null
+
+    fun replace(newCallback: KuiklyRenderCallback?) {
+        callback?.invoke(mapOf("code" to -1, "isLoggedIn" to KRBridgeModule.isNncosLoggedIn(), "message" to "login replaced"))
         callback = newCallback
     }
 

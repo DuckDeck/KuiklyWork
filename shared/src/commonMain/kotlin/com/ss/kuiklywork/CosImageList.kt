@@ -6,14 +6,16 @@ import com.ss.kuiklywork.base.setTimeout
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewBuilder
+import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.observable
+import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.views.Image
+import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
-import com.tencent.kuikly.core.views.layout.Row
 
 private const val NNCOS_HOST = "https://www.nncos.com"
 private const val NNCOS_MAX_RENDER_ITEMS = 120
@@ -42,21 +44,24 @@ private data class CosCategoryCache(
     val noMore: Boolean
 )
 
+private data class CosImageRow(val left: CosImageItem, val right: CosImageItem?)
+
 private val COS_CATEGORY_LIST = listOf(
-    CosCategory("全部", "$NNCOS_HOST/"),
-    CosCategory("亚洲", "$NNCOS_HOST/ac"),
-    CosCategory("热门", "$NNCOS_HOST/month.html"),
-    CosCategory("欧美", "$NNCOS_HOST/ec"),
-    CosCategory("秀人", "$NNCOS_HOST/xr"),
-    CosCategory("日韩", "$NNCOS_HOST/jk"),
-    CosCategory("高清", "$NNCOS_HOST/hd"),
-    CosCategory("汉服", "$NNCOS_HOST/hf")
+    CosCategory("\u5168\u90e8", "$NNCOS_HOST/"),
+    CosCategory("\u4e9a\u6d32", "$NNCOS_HOST/ac"),
+    CosCategory("\u70ed\u95e8", "$NNCOS_HOST/month.html"),
+    CosCategory("\u6b27\u7f8e", "$NNCOS_HOST/ec"),
+    CosCategory("\u79c0\u4eba", "$NNCOS_HOST/xr"),
+    CosCategory("\u65e5\u97e9", "$NNCOS_HOST/jk"),
+    CosCategory("\u9ad8\u6e05", "$NNCOS_HOST/hd"),
+    CosCategory("\u6c49\u670d", "$NNCOS_HOST/hf")
 )
 
 @Page("cosImageList")
 internal class CosImageListPage : BasePager() {
 
     var imageItems by observable(listOf<CosImageItem>())
+    private var imageRows by observableList<CosImageRow>()
     var loading by observable(false)
     var loadingMore by observable(false)
     var noMore by observable(false)
@@ -103,6 +108,7 @@ internal class CosImageListPage : BasePager() {
         imageItems = imageItems.map { item ->
             item.copy(downloaded = item.detailUrl in downloadedDetailUrls)
         }
+        syncImageRows()
         categoryCache.entries.forEach { entry ->
             entry.setValue(entry.value.copy(items = entry.value.items.map { item ->
                 item.copy(downloaded = item.detailUrl in downloadedDetailUrls)
@@ -140,6 +146,7 @@ internal class CosImageListPage : BasePager() {
         acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
             .log("CosImageList restore cache category=${currentCategory.url} total=${cached.items.size}")
         imageItems = cached.items
+        syncImageRows()
         pageIndex = cached.pageIndex
         noMore = cached.noMore
         statusMessage = ""
@@ -149,6 +156,7 @@ internal class CosImageListPage : BasePager() {
         pageIndex = 0
         noMore = false
         imageItems = emptyList()
+        syncImageRows()
         loadPage(page = 1, append = false)
     }
 
@@ -169,7 +177,7 @@ internal class CosImageListPage : BasePager() {
             if (currentRequestId == requestId && (loading || loadingMore)) {
                 loading = false
                 loadingMore = false
-                statusMessage = "请求超时，请重试"
+                statusMessage = "\u8bf7\u6c42\u8d85\u65f6\uff0c\u8bf7\u91cd\u8bd5"
             }
         }
 
@@ -177,7 +185,7 @@ internal class CosImageListPage : BasePager() {
             val code = response?.optInt("code", -1) ?: -1
             val html = response?.optString("body", "") ?: ""
             val result = if (code == 0) parseNncosImages(html) else CosPageResult(emptyList(), false)
-            val errorMessage = response?.optString("message", "请求失败，请重试") ?: "请求失败，请重试"
+            val errorMessage = response?.optString("message", "\u8bf7\u6c42\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5") ?: "\u8bf7\u6c42\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5"
             setTimeout(0) {
                 if (currentRequestId != requestId) return@setTimeout
                 loading = false
@@ -191,19 +199,27 @@ internal class CosImageListPage : BasePager() {
                         noMore = true
                         statusMessage = ""
                     } else {
-                        statusMessage = "没有解析到图片"
+                        statusMessage = "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247"
                     }
                     return@setTimeout
                 }
                 val merged = (if (append) mergeCosImageItems(imageItems, result.items) else result.items)
                     .map { item -> item.copy(downloaded = item.detailUrl in downloadedDetailUrls) }
                 imageItems = merged.take(NNCOS_MAX_RENDER_ITEMS)
+                syncImageRows()
                 pageIndex = page
                 noMore = !result.hasNextPage || merged.size >= NNCOS_MAX_RENDER_ITEMS
                 statusMessage = ""
                 categoryCache[currentCategory.url] = CosCategoryCache(imageItems, pageIndex, noMore)
                 bridgeModule.log("CosImageList page applied page=$page total=${imageItems.size} noMore=$noMore")
             }
+        }
+    }
+
+    private fun syncImageRows() {
+        imageRows.clear()
+        imageItems.chunked(2).forEach { items ->
+            imageRows.add(CosImageRow(items.first(), items.getOrNull(1)))
         }
     }
 
@@ -215,16 +231,18 @@ internal class CosImageListPage : BasePager() {
             }
             RouterNavBar {
                 attr {
-                    title = ctx.pagerData.params.optString("title", "半次元图")
+                    title = ctx.pagerData.params.optString("title", "\u534a\u6b21\u5143\u56fe")
                     backDisable = false
                 }
             }
             CosCategoryMenu(ctx)
             CosLoginBar(ctx)
-            Scroller {
+            List {
                 attr {
                     flex(1f)
                     padding(NNCOS_LIST_PADDING)
+                    firstContentLoadMaxIndex(6)
+                    preloadViewDistance(ctx.pageData.pageViewHeight)
                 }
                 event {
                     scroll {
@@ -249,12 +267,15 @@ internal class CosImageListPage : BasePager() {
                         }
                     }
                 }
-                Row {
-                    attr {
-                        width(maxOf(0f, ctx.pageData.pageViewWidth - NNCOS_LIST_PADDING * 2f))
+                vforLazy({ ctx.imageRows }, maxLoadItem = 8) { row, _, _ ->
+                    View {
+                        attr {
+                            width(maxOf(0f, ctx.pageData.pageViewWidth - NNCOS_LIST_PADDING * 2f))
+                            flexDirectionRow()
+                        }
+                        CosImageCard(ctx, row.left, rightMargin = 3f, leftMargin = 0f)
+                        CosImageCard(ctx, row.right, rightMargin = 0f, leftMargin = 3f)
                     }
-                    CosWaterfallColumn(ctx, startIndex = 0, rightMargin = 3f, leftMargin = 0f)
-                    CosWaterfallColumn(ctx, startIndex = 1, rightMargin = 0f, leftMargin = 3f)
                 }
                 CosLoadMoreFooter(ctx)
             }
@@ -263,12 +284,12 @@ internal class CosImageListPage : BasePager() {
 
     fun footerText(): String {
         return when {
-            loading -> "正在加载..."
-            loadingMore -> "正在加载第 ${pageIndex + 1} 页..."
-            noMore && imageItems.isNotEmpty() -> "没有更多了"
-            statusMessage.isNotEmpty() && imageItems.isEmpty() -> "重试"
+            loading -> "\u6b63\u5728\u52a0\u8f7d..."
+            loadingMore -> "\u6b63\u5728\u52a0\u8f7d\u7b2c ${pageIndex + 1} \u9875..."
+            noMore && imageItems.isNotEmpty() -> "\u6ca1\u6709\u66f4\u591a\u4e86"
+            statusMessage.isNotEmpty() && imageItems.isEmpty() -> "\u91cd\u8bd5"
             imageItems.isEmpty() -> ""
-            else -> "加载更多"
+            else -> "\u52a0\u8f7d\u66f4\u591a"
         }
     }
 }
@@ -297,7 +318,7 @@ private fun parseNncosImages(html: String): CosPageResult {
             ?.decodeCosHtmlEntities()
             ?.trim()
             .orEmpty()
-            .ifEmpty { "半次元图" }
+            .ifEmpty { "\u534a\u6b21\u5143\u56fe" }
         val categoryName = article.value.extractCosCategoryName()
         val publishedAt = article.value.extractCosPublishedAt()
         items.add(CosImageItem(imageUrl, title, detailUrl, categoryName, publishedAt))
@@ -397,14 +418,14 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosLoginBar(ctx: Co
         }
         Text {
             attr {
-                text(if (ctx.nncosLoggedIn) "半次元图：已登录" else "半次元图：未登录")
+                text(if (ctx.nncosLoggedIn) "\u534a\u6b21\u5143\u56fe\uff1a\u5df2\u767b\u5f55" else "\u534a\u6b21\u5143\u56fe\uff1a\u672a\u767b\u5f55")
                 fontSize(13f)
                 color(Color(0xFF666666))
             }
         }
         Text {
             attr {
-                text(if (ctx.nncosLoggedIn) "重新登录" else "登录")
+                text(if (ctx.nncosLoggedIn) "\u91cd\u65b0\u767b\u5f55" else "\u767b\u5f55")
                 fontSize(13f)
                 color(Color(0xFF1E6BFF))
                 fontWeightBold()
@@ -419,54 +440,43 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosLoginBar(ctx: Co
     }
 }
 
-private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosWaterfallColumn(
+private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(
     ctx: CosImageListPage,
-    startIndex: Int,
+    item: CosImageItem?,
     rightMargin: Float,
     leftMargin: Float
 ) {
     View {
         attr {
             flex(1f)
-            if (rightMargin > 0f) marginRight(rightMargin)
-            if (leftMargin > 0f) marginLeft(leftMargin)
-        }
-        for (slot in 0 until NNCOS_MAX_RENDER_ITEMS / 2) {
-            CosImageCard(ctx, startIndex + slot * 2)
-        }
-    }
-}
-
-private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(ctx: CosImageListPage, index: Int) {
-    View {
-        attr {
-            val item = ctx.imageItems.getOrNull(index)
             backgroundColor(Color.WHITE)
             borderRadius(6f)
             height(if (item == null) 0f else 220f)
             marginBottom(if (item == null) 0f else 8f)
+            if (rightMargin > 0f) marginRight(rightMargin)
+            if (leftMargin > 0f) marginLeft(leftMargin)
         }
         event {
             click {
-                val item = ctx.imageItems.getOrNull(index) ?: return@click
+                val cardItem = item ?: return@click
                 val pageData = JSONObject()
-                pageData.put("title", item.title)
-                pageData.put("detailUrl", item.detailUrl)
-                pageData.put("imageUrl", item.imageUrl)
+                pageData.put("title", cardItem.title)
+                pageData.put("detailUrl", cardItem.detailUrl)
+                pageData.put("imageUrl", cardItem.imageUrl)
                 ctx.acquireModule<RouterModule>(RouterModule.MODULE_NAME)
                     .openPage("cosImageDetail", pageData)
             }
         }
         Image {
             attr {
-                src(ctx.imageItems.getOrNull(index)?.imageUrl ?: "")
-                height(if (ctx.imageItems.getOrNull(index) == null) 0f else 176f)
+                src(item?.imageUrl ?: "")
+                height(if (item == null) 0f else 176f)
                 resizeCover()
             }
         }
         View {
             attr {
-                height(if (ctx.imageItems.getOrNull(index) == null) 0f else 32f)
+                height(if (item == null) 0f else 32f)
                 paddingLeft(8f)
                 paddingRight(8f)
                 backgroundColor(Color(0x99000000))
@@ -477,7 +487,7 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(ctx: C
             }
             Text {
                 attr {
-                    text(ctx.imageItems.getOrNull(index)?.categoryName ?: "")
+                    text(item?.categoryName ?: "")
                     fontSize(11f)
                     color(Color.WHITE)
                     lines(1)
@@ -485,7 +495,7 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(ctx: C
             }
             Text {
                 attr {
-                    text(ctx.imageItems.getOrNull(index)?.publishedAt ?: "")
+                    text(item?.publishedAt ?: "")
                     fontSize(11f)
                     color(Color(0xFFE8E8E8))
                     lines(1)
@@ -494,7 +504,6 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(ctx: C
         }
         Text {
             attr {
-                val item = ctx.imageItems.getOrNull(index)
                 text(if (item?.downloaded == true) "\u5df2\u4e0b\u8f7d" else "")
                 width(if (item?.downloaded == true) 52f else 0f)
                 height(if (item?.downloaded == true) 24f else 0f)
@@ -508,11 +517,11 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(ctx: C
         }
         View {
             attr {
-                padding(if (ctx.imageItems.getOrNull(index) == null) 0f else 8f)
+                padding(if (item == null) 0f else 8f)
             }
             Text {
                 attr {
-                    text(ctx.imageItems.getOrNull(index)?.title ?: "")
+                    text(item?.title ?: "")
                     fontSize(12f)
                     color(Color(0xFF333333))
                     lines(2)
@@ -521,7 +530,6 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(ctx: C
         }
     }
 }
-
 private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosLoadMoreFooter(ctx: CosImageListPage) {
     View {
         attr {

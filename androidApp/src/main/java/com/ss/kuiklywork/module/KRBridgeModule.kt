@@ -29,6 +29,7 @@ import java.net.URL
 import java.nio.charset.Charset
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.zip.GZIPInputStream
 import java.util.zip.InflaterInputStream
 
@@ -293,6 +294,18 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                     return@Thread
                 }
                 val contentType = connection.contentType ?: ""
+                if (contentType.lowercase().startsWith("image/")) {
+                    val mimeType = contentType.substringBefore(";").lowercase()
+                    val extension = imageExtension(mimeType)
+                    val savedUri = connection.inputStream.use { input ->
+                        saveImageStream(input, title, mimeType, extension)
+                    }
+                    invokeDownloadCallback(
+                        callback,
+                        mapOf("code" to 0, "message" to "\u5df2\u4fdd\u5b58\u5230\u76f8\u518c", "uri" to savedUri)
+                    )
+                    return@Thread
+                }
                 val bytes = connection.inputStream.readBytes()
                 if (!looksLikeImage(contentType, bytes)) {
                     val html = decodeHtml(bytes, contentType)
@@ -505,6 +518,39 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
         val file = File(dir, fileName)
         FileOutputStream(file).use { it.write(bytes) }
+        return file.absolutePath
+    }
+
+    private fun saveImageStream(input: InputStream, title: String, mimeType: String, extension: String): String {
+        val resolver = KRApplication.application.contentResolver
+        val fileName = "${safeFileName(title)}_${System.currentTimeMillis()}.$extension"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/KuiklyWork")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("create media uri failed")
+            try {
+                resolver.openOutputStream(uri)?.use { output -> input.copyTo(output) }
+                    ?: throw IllegalStateException("open media output failed")
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                return uri.toString()
+            } catch (error: Throwable) {
+                resolver.delete(uri, null, null)
+                throw error
+            }
+        }
+        val dir = File(KRApplication.application.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "KuiklyWork")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        val file = File(dir, fileName)
+        FileOutputStream(file).use { output -> input.copyTo(output) }
         return file.absolutePath
     }
 

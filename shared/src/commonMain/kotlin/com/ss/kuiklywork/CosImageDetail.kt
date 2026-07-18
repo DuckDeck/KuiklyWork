@@ -6,12 +6,13 @@ import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.directives.vfor
+import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.views.ActivityIndicator
 import com.tencent.kuikly.core.views.Image
-import com.tencent.kuikly.core.views.Scroller
+import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
@@ -119,6 +120,10 @@ internal class CosImageDetailPage : BasePager() {
         return pageData.pageViewWidth * ratio
     }
 
+    private fun navigationTitle(): String {
+        return if (titleText.length <= 10) titleText else "${titleText.take(10)}..."
+    }
+
     private fun updateImageAspectRatio(imageUrl: String, imageWidth: Int, imageHeight: Int) {
         if (imageWidth <= 0 || imageHeight <= 0) return
         val ratio = (imageHeight.toFloat() / imageWidth.toFloat()).coerceIn(0.2f, 5f)
@@ -134,7 +139,7 @@ internal class CosImageDetailPage : BasePager() {
             }
             RouterNavBar {
                 attr {
-                    title = ctx.titleText
+                    title = ctx.navigationTitle()
                     backDisable = false
                 }
             }
@@ -185,10 +190,12 @@ internal class CosImageDetailPage : BasePager() {
                     }
                 }
             }
-            Scroller {
+            List {
                 attr {
                     flex(1f)
                     backgroundColor(Color(0xFF111111))
+                    firstContentLoadMaxIndex(4)
+                    preloadViewDistance(ctx.pageData.pageViewHeight)
                 }
                 View {
                     attr {
@@ -208,7 +215,7 @@ internal class CosImageDetailPage : BasePager() {
                         }
                     }
                 }
-                vfor({ ctx.imageUrls }) { imageUrl ->
+                vforLazy({ ctx.imageUrls }, maxLoadItem = 6) { imageUrl, _, _ ->
                     Image {
                         attr {
                             src(imageUrl)
@@ -221,15 +228,6 @@ internal class CosImageDetailPage : BasePager() {
                                 ctx.updateImageAspectRatio(imageUrl, resolution.width, resolution.height)
                             }
                         }
-                    }
-                }
-                Text {
-                    attr {
-                        text(if (ctx.statusText.isNotEmpty() && ctx.imageUrls.isNotEmpty()) ctx.statusText else "")
-                        height(if (ctx.statusText.isNotEmpty() && ctx.imageUrls.isNotEmpty()) 38f else 0f)
-                        fontSize(13f)
-                        color(Color(0xFFB5B5B5))
-                        textAlignCenter()
                     }
                 }
             }

@@ -30,6 +30,7 @@ internal class CosImageDetailPage : BasePager() {
     var downloading by observable(false)
     var downloadingIndex by observable(0)
     var downloaded by observable(false)
+    private var detailLoadRequestId = 0
 
     override fun created() {
         super.created()
@@ -54,19 +55,54 @@ internal class CosImageDetailPage : BasePager() {
             statusText = "\u6ca1\u6709\u56fe\u7247\u8be6\u60c5\u5730\u5740"
             return
         }
+        val requestId = ++detailLoadRequestId
         statusText = "\u6b63\u5728\u52a0\u8f7d..."
-        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).fetchHtml(detailUrl) { response ->
+        imageUrls.clear()
+        imageAspectRatios = emptyMap()
+        loadDetailPages(
+            pendingUrls = mutableListOf(detailUrl),
+            loadedUrls = mutableSetOf(),
+            requestId = requestId
+        )
+    }
+
+    private fun loadDetailPages(
+        pendingUrls: MutableList<String>,
+        loadedUrls: MutableSet<String>,
+        requestId: Int
+    ) {
+        if (pendingUrls.isEmpty()) {
+            statusText = if (imageUrls.isEmpty()) "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247" else ""
+            return
+        }
+        val pageUrl = pendingUrls.removeAt(0)
+        if (!loadedUrls.add(pageUrl)) {
+            loadDetailPages(pendingUrls, loadedUrls, requestId)
+            return
+        }
+        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).fetchHtml(pageUrl) { response ->
+            if (requestId != detailLoadRequestId) return@fetchHtml
             val html = response?.optString("body", "") ?: ""
             if (response?.optInt("code", -1) != 0 || html.isEmpty()) {
-                statusText = response?.optString("message", "\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25") ?: "\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25"
+                if (imageUrls.isEmpty() && pendingUrls.isEmpty()) {
+                    statusText = response?.optString("message", "\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25") ?: "\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25"
+                }
+                loadDetailPages(pendingUrls, loadedUrls, requestId)
                 return@fetchHtml
             }
-            val result = parseNncosDetail(html)
+            val result = parseNncosDetail(html, pageUrl)
             if (result.title.isNotEmpty()) titleText = result.title
-            imageUrls.clear()
-            imageAspectRatios = emptyMap()
-            imageUrls.addAll(result.imageUrls)
-            statusText = if (result.imageUrls.isEmpty()) "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247" else ""
+            val knownImageUrls = imageUrls.toHashSet()
+            imageUrls.addAll(result.imageUrls.filter { knownImageUrls.add(it) })
+            result.pageUrls
+                .filter { it !in loadedUrls && it !in pendingUrls }
+                .forEach { pendingUrls.add(it) }
+            if (pendingUrls.isEmpty()) {
+                statusText = if (imageUrls.isEmpty()) "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247" else ""
+            } else {
+                statusText = "\u6b63\u5728\u52a0\u8f7d\u7b2c ${loadedUrls.size + 1} \u9875..."
+                loadDetailPages(pendingUrls, loadedUrls, requestId)
+            }
         }
     }
 
@@ -235,9 +271,13 @@ internal class CosImageDetailPage : BasePager() {
     }
 }
 
-private data class CosDetailResult(val title: String, val imageUrls: List<String>)
+private data class CosDetailResult(
+    val title: String,
+    val imageUrls: List<String>,
+    val pageUrls: List<String>
+)
 
-private fun parseNncosDetail(html: String): CosDetailResult {
+private fun parseNncosDetail(html: String, pageUrl: String): CosDetailResult {
     val title = Regex("<h1\\b[^>]*>([\\s\\S]*?)</h1>", RegexOption.IGNORE_CASE)
         .find(html)?.groupValues?.getOrNull(1)
         ?.replace(Regex("<[^>]+>"), "")
@@ -268,7 +308,20 @@ private fun parseNncosDetail(html: String): CosDetailResult {
         .filter { it.isNncosDetailImageUrl() }
         .filter { seenUrls.add(it) }
         .toList()
-    return CosDetailResult(title, imageUrls)
+    return CosDetailResult(title, imageUrls, parseNncosDetailPageUrls(content, pageUrl))
+}
+
+/** Returns the page links emitted by WordPress's in-post pagination widget. */
+private fun parseNncosDetailPageUrls(html: String, currentPageUrl: String): List<String> {
+    val pageUrls = mutableListOf<String>()
+    Regex("<a\\b[^>]*>", RegexOption.IGNORE_CASE).findAll(html).forEach { match ->
+        val tag = match.value
+        val className = tag.extractCosDetailAttribute("class") ?: return@forEach
+        if (!className.contains("page-numbers", ignoreCase = true)) return@forEach
+        val href = tag.extractCosDetailAttribute("href") ?: return@forEach
+        href.toAbsoluteCosDetailUrl(currentPageUrl).takeIf { it != currentPageUrl }?.let(pageUrls::add)
+    }
+    return pageUrls.distinct()
 }
 
 private fun String.isNncosDetailImageUrl(): Boolean {
@@ -281,12 +334,15 @@ private fun String.extractCosDetailAttribute(name: String): String? {
         .find(this)?.groupValues?.getOrNull(2)
 }
 
-private fun String.toAbsoluteCosDetailUrl(): String {
+private fun String.toAbsoluteCosDetailUrl(baseUrl: String = COS_DETAIL_HOST): String {
+    val url = decodeCosDetailHtmlEntities()
     return when {
-        startsWith("//") -> "https:$this"
-        startsWith("http://") || startsWith("https://") -> this
-        startsWith("/") -> "$COS_DETAIL_HOST$this"
-        else -> "$COS_DETAIL_HOST/$this"
+        url.startsWith("//") -> "https:$url"
+        url.startsWith("http://") || url.startsWith("https://") -> url
+        url.startsWith("/") -> "$COS_DETAIL_HOST$url"
+        url.startsWith("?") -> baseUrl.substringBefore('?').substringBefore('#') + url
+        baseUrl == COS_DETAIL_HOST -> "$COS_DETAIL_HOST/$url"
+        else -> baseUrl.substringBefore('?').substringBefore('#').substringBeforeLast('/') + "/$url"
     }
 }
 

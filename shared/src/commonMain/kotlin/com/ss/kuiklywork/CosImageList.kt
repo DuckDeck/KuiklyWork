@@ -30,6 +30,7 @@ internal data class CosImageItem(
     val detailUrl: String,
     val categoryName: String,
     val publishedAt: String,
+    val isVip: Boolean = false,
     val downloaded: Boolean = false
 )
 
@@ -321,7 +322,8 @@ private fun parseNncosImages(html: String): CosPageResult {
             .ifEmpty { "\u534a\u6b21\u5143\u56fe" }
         val categoryName = article.value.extractCosCategoryName()
         val publishedAt = article.value.extractCosPublishedAt()
-        items.add(CosImageItem(imageUrl, title, detailUrl, categoryName, publishedAt))
+        val isVip = article.value.hasCosVipIcon()
+        items.add(CosImageItem(imageUrl, title, detailUrl, categoryName, publishedAt, isVip))
     }
     val hasNextPage = Regex("<a\\b[^>]*class=[\"'][^\"']*page-next[^\"']*[\"'][^>]*href=", RegexOption.IGNORE_CASE)
         .containsMatchIn(html)
@@ -371,6 +373,13 @@ private fun String.extractCosPublishedAt(): String {
         ?.decodeCosHtmlEntities()
         ?.trim()
         .orEmpty()
+}
+
+private fun String.hasCosVipIcon(): Boolean {
+    return Regex(
+        "<[^>]+class=[\"'][^\"']*entry-vip-icon[^\"']*[\"']",
+        RegexOption.IGNORE_CASE
+    ).containsMatchIn(this)
 }
 
 private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosCategoryMenu(ctx: CosImageListPage) {
@@ -516,6 +525,25 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosImageCard(
                     text(if (item?.downloaded == true) "\u5df2\u4e0b\u8f7d" else "")
                     fontSize(11f)
                     color(Color.WHITE)
+                    lines(1)
+                }
+            }
+        }
+        View {
+            attr {
+                width(if (item?.isVip == true) 38f else 0f)
+                height(if (item?.isVip == true) 24f else 0f)
+                backgroundColor(Color(0xCCE88B20))
+                borderRadius(4f)
+                absolutePosition(top = 7f, left = 7f)
+                allCenter()
+            }
+            Text {
+                attr {
+                    text(if (item?.isVip == true) "VIP" else "")
+                    fontSize(11f)
+                    color(Color.WHITE)
+                    fontWeightBold()
                     lines(1)
                 }
             }

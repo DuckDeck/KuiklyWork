@@ -31,6 +31,7 @@ internal class CosImageDetailPage : BasePager() {
     var downloadingIndex by observable(0)
     var downloaded by observable(false)
     private var detailLoadRequestId = 0
+    private var loginExpired = false
 
     override fun created() {
         super.created()
@@ -56,6 +57,7 @@ internal class CosImageDetailPage : BasePager() {
             return
         }
         val requestId = ++detailLoadRequestId
+        loginExpired = false
         statusText = "\u6b63\u5728\u52a0\u8f7d..."
         imageUrls.clear()
         imageAspectRatios = emptyMap()
@@ -92,6 +94,11 @@ internal class CosImageDetailPage : BasePager() {
             }
             val result = parseNncosDetail(html, pageUrl)
             if (result.title.isNotEmpty()) titleText = result.title
+            if (result.hasHiddenVipContent && result.imageUrls.isEmpty()) {
+                pendingUrls.clear()
+                markNncosLoginExpired()
+                return@fetchHtml
+            }
             val knownImageUrls = imageUrls.toHashSet()
             imageUrls.addAll(result.imageUrls.filter { knownImageUrls.add(it) })
             result.pageUrls
@@ -106,8 +113,15 @@ internal class CosImageDetailPage : BasePager() {
         }
     }
 
+    private fun markNncosLoginExpired() {
+        if (loginExpired) return
+        loginExpired = true
+        statusText = "登录已过期，请返回后重新登录"
+        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).invalidateNncosLogin { }
+    }
+
     fun downloadAllImages() {
-        if (downloading || downloaded) return
+        if (downloading) return
         if (imageUrls.isEmpty()) {
             acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast("\u6ca1\u6709\u53ef\u4e0b\u8f7d\u7684\u56fe\u7247")
             return
@@ -216,12 +230,12 @@ internal class CosImageDetailPage : BasePager() {
                         text(
                             when {
                                 ctx.downloading -> "\u4e0b\u8f7d\u4e2d"
-                                ctx.downloaded -> "\u5df2\u4e0b\u8f7d"
+                                ctx.downloaded -> "\u91cd\u65b0\u4e0b\u8f7d"
                                 else -> "\u4e0b\u8f7d"
                             }
                         )
                         fontSize(14f)
-                        color(if (ctx.downloaded) Color(0xFF198754) else Color(0xFF1E6BFF))
+                        color(Color(0xFF1E6BFF))
                         fontWeightBold()
                     }
                 }
@@ -274,7 +288,8 @@ internal class CosImageDetailPage : BasePager() {
 private data class CosDetailResult(
     val title: String,
     val imageUrls: List<String>,
-    val pageUrls: List<String>
+    val pageUrls: List<String>,
+    val hasHiddenVipContent: Boolean
 )
 
 private fun parseNncosDetail(html: String, pageUrl: String): CosDetailResult {
@@ -308,7 +323,12 @@ private fun parseNncosDetail(html: String, pageUrl: String): CosDetailResult {
         .filter { it.isNncosDetailImageUrl() }
         .filter { seenUrls.add(it) }
         .toList()
-    return CosDetailResult(title, imageUrls, parseNncosDetailPageUrls(content, pageUrl))
+    return CosDetailResult(
+        title = title,
+        imageUrls = imageUrls,
+        pageUrls = parseNncosDetailPageUrls(content, pageUrl),
+        hasHiddenVipContent = content.contains("viphidecontent", ignoreCase = true)
+    )
 }
 
 /** Returns the page links emitted by WordPress's in-post pagination widget. */

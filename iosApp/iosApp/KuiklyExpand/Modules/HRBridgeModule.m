@@ -2,6 +2,7 @@
 
 #import "KuiklyRenderViewController.h"
 #import <OpenKuiklyIOSRender/NSObject+KR.h>
+#import <Security/Security.h>
 #import <WebKit/WebKit.h>
 
 static NSString * const kNetbianHomeURL = @"https://pic.netbian.com/";
@@ -14,6 +15,12 @@ static NSString * const kNncosHomeURL = @"https://www.nncos.com/";
 static NSString * const kNncosLoginURL = @"https://www.nncos.com/login/?redirect_to=https%3A%2F%2Fwww.nncos.com%2F";
 static NSString * const kNncosLoginSucceededKey = @"nncos_login_succeeded";
 static KuiklyRenderCallback gNncosLoginCallback = nil;
+static NSString * const kRecoveryKeychainService = @"com.ss.kuiklywork.recovery";
+static NSString * const kRecoveryNetbianCookiesAccount = @"netbian_cookies";
+static NSString * const kRecoveryNncosCookiesAccount = @"nncos_cookies";
+static NSString * const kRecoveryDownloadedURLsAccount = @"downloaded_urls";
+static BOOL gNetbianCookiesRestored = NO;
+static BOOL gNncosCookiesRestored = NO;
 
 @interface NetbianLoginViewController : UIViewController <WKNavigationDelegate>
 @end
@@ -32,10 +39,20 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
 + (void)syncWKNetbianCookiesWithCompletion:(dispatch_block_t)completion;
 + (void)finishNncosLoginWithSuccess:(BOOL)success message:(NSString *)message;
 + (void)markNncosLoginSucceeded;
++ (void)clearNncosLoginState;
 + (BOOL)isNncosLoggedIn;
 + (BOOL)hasNncosCookie;
 + (BOOL)hasNncosLoginCookie;
++ (NSString *)nncosCookieHeader;
 + (void)syncWKNncosCookiesWithCompletion:(dispatch_block_t)completion;
++ (void)restoreNetbianCookiesIfNeeded;
++ (void)restoreNncosCookiesIfNeeded;
++ (void)backupCookiesForURL:(NSURL *)url account:(NSString *)account;
++ (void)restoreCookiesForURL:(NSURL *)url account:(NSString *)account;
++ (void)restoreDownloadedRecordsIfNeeded;
++ (void)saveKeychainString:(NSString *)value account:(NSString *)account;
++ (NSString *)keychainStringForAccount:(NSString *)account;
++ (void)deleteKeychainItemForAccount:(NSString *)account;
 @end
 
 @interface NetbianLoginViewController ()
@@ -253,6 +270,10 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
         [self getNncosLoginStateWithCallback:callback];
         return nil;
     }
+    if ([method isEqualToString:@"invalidateNncosLogin"]) {
+        [self invalidateNncosLoginWithCallback:callback];
+        return nil;
+    }
     if ([method isEqualToString:@"downloadNetbianImage"]) {
         [self downloadNetbianImageWithParams:params callback:callback];
         return nil;
@@ -269,6 +290,7 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
 }
 
 - (void)getNetbianDownloadRecordsWithCallback:(KuiklyRenderCallback _Nullable)callback {
+    [HRBridgeModule restoreDownloadedRecordsIfNeeded];
     NSString *urls = [[NSUserDefaults standardUserDefaults] stringForKey:kNetbianDownloadedURLsKey] ?: @"";
     if (callback) {
         callback(@{ @"code": @(0), @"urls": urls });
@@ -296,7 +318,9 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
     while (records.count > kNetbianDownloadRecordLimit) {
         [records removeObjectAtIndex:records.count - 1];
     }
-    [[NSUserDefaults standardUserDefaults] setObject:[[records array] componentsJoinedByString:@"\n"] forKey:kNetbianDownloadedURLsKey];
+    NSString *downloadedURLs = [[records array] componentsJoinedByString:@"\n"];
+    [[NSUserDefaults standardUserDefaults] setObject:downloadedURLs forKey:kNetbianDownloadedURLsKey];
+    [HRBridgeModule saveKeychainString:downloadedURLs account:kRecoveryDownloadedURLsAccount];
     if (callback) {
         callback(@{ @"code": @(0) });
     }
@@ -323,7 +347,9 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
     request.timeoutInterval = 10;
     [request setValue:@"Mozilla/5.0 KuiklyWork" forHTTPHeaderField:@"User-Agent"];
     [request setValue:@"text/html,application/xhtml+xml" forHTTPHeaderField:@"Accept"];
-    NSString *cookie = [HRBridgeModule netbianCookieHeader];
+    NSString *cookie = [url.host containsString:@"nncos.com"]
+        ? [HRBridgeModule nncosCookieHeader]
+        : [HRBridgeModule netbianCookieHeader];
     if (cookie.length > 0) {
         [request setValue:cookie forHTTPHeaderField:@"Cookie"];
     }
@@ -391,6 +417,13 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
             callback(@{ @"code": @(0), @"isLoggedIn": @([HRBridgeModule isNncosLoggedIn]), @"hasCookie": @([HRBridgeModule hasNncosCookie]) });
         }
     }];
+}
+
+- (void)invalidateNncosLoginWithCallback:(KuiklyRenderCallback _Nullable)callback {
+    [HRBridgeModule clearNncosLoginState];
+    if (callback) {
+        callback(@{ @"code": @(0), @"isLoggedIn": @NO });
+    }
 }
 
 - (void)downloadNetbianImageWithParams:(id _Nullable)params callback:(KuiklyRenderCallback _Nullable)callback {
@@ -537,9 +570,11 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
 + (void)markNetbianLoginSucceeded {
     [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kNetbianLoginSucceededKey];
     [[NSUserDefaults standardUserDefaults] synchronize];
+    [self backupCookiesForURL:[NSURL URLWithString:kNetbianHomeURL] account:kRecoveryNetbianCookiesAccount];
 }
 
 + (BOOL)isNetbianLoggedIn {
+    [self restoreNetbianCookiesIfNeeded];
     if ([self hasNetbianLoginCookie]) {
         [self markNetbianLoginSucceeded];
         return YES;
@@ -553,11 +588,13 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
 }
 
 + (BOOL)hasNetbianCookie {
+    [self restoreNetbianCookiesIfNeeded];
     NSURL *url = [NSURL URLWithString:kNetbianHomeURL];
     return [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url].count > 0;
 }
 
 + (BOOL)hasNetbianLoginCookie {
+    [self restoreNetbianCookiesIfNeeded];
     NSURL *url = [NSURL URLWithString:kNetbianHomeURL];
     NSArray<NSHTTPCookie *> *cookies = [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url];
     NSSet<NSString *> *loginKeys = [NSSet setWithArray:@[
@@ -579,6 +616,7 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
 }
 
 + (NSString *)netbianCookieHeader {
+    [self restoreNetbianCookiesIfNeeded];
     NSURL *url = [NSURL URLWithString:kNetbianHomeURL];
     NSArray<NSHTTPCookie *> *cookies = [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url];
     NSMutableArray<NSString *> *pairs = [NSMutableArray array];
@@ -618,9 +656,28 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
 + (void)markNncosLoginSucceeded {
     [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kNncosLoginSucceededKey];
     [[NSUserDefaults standardUserDefaults] synchronize];
+    [self backupCookiesForURL:[NSURL URLWithString:kNncosHomeURL] account:kRecoveryNncosCookiesAccount];
+}
+
++ (void)clearNncosLoginState {
+    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:kNncosLoginSucceededKey];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    NSURL *url = [NSURL URLWithString:kNncosHomeURL];
+    for (NSHTTPCookie *cookie in [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url]) {
+        [[NSHTTPCookieStorage sharedHTTPCookieStorage] deleteCookie:cookie];
+    }
+    [self deleteKeychainItemForAccount:kRecoveryNncosCookiesAccount];
+    [WKWebsiteDataStore.defaultDataStore.httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
+        for (NSHTTPCookie *cookie in cookies) {
+            if ([cookie.domain containsString:@"nncos.com"]) {
+                [WKWebsiteDataStore.defaultDataStore.httpCookieStore deleteCookie:cookie completionHandler:nil];
+            }
+        }
+    }];
 }
 
 + (BOOL)isNncosLoggedIn {
+    [self restoreNncosCookiesIfNeeded];
     if ([self hasNncosLoginCookie]) {
         [self markNncosLoginSucceeded];
         return YES;
@@ -634,11 +691,13 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
 }
 
 + (BOOL)hasNncosCookie {
+    [self restoreNncosCookiesIfNeeded];
     NSURL *url = [NSURL URLWithString:kNncosHomeURL];
     return [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url].count > 0;
 }
 
 + (BOOL)hasNncosLoginCookie {
+    [self restoreNncosCookiesIfNeeded];
     NSURL *url = [NSURL URLWithString:kNncosHomeURL];
     for (NSHTTPCookie *cookie in [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url]) {
         if ([cookie.name.lowercaseString hasPrefix:@"wordpress_logged_in_"] && cookie.value.length > 0) {
@@ -646,6 +705,19 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
         }
     }
     return NO;
+}
+
++ (NSString *)nncosCookieHeader {
+    [self restoreNncosCookiesIfNeeded];
+    NSURL *url = [NSURL URLWithString:kNncosHomeURL];
+    NSArray<NSHTTPCookie *> *cookies = [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url];
+    NSMutableArray<NSString *> *pairs = [NSMutableArray array];
+    for (NSHTTPCookie *cookie in cookies) {
+        if (cookie.name.length > 0 && cookie.value.length > 0) {
+            [pairs addObject:[NSString stringWithFormat:@"%@=%@", cookie.name, cookie.value]];
+        }
+    }
+    return [pairs componentsJoinedByString:@"; "];
 }
 
 + (void)syncWKNncosCookiesWithCompletion:(dispatch_block_t)completion {
@@ -661,6 +733,129 @@ static KuiklyRenderCallback gNncosLoginCallback = nil;
             }
         });
     }];
+}
+
++ (void)restoreNetbianCookiesIfNeeded {
+    if (gNetbianCookiesRestored) {
+        return;
+    }
+    gNetbianCookiesRestored = YES;
+    [self restoreCookiesForURL:[NSURL URLWithString:kNetbianHomeURL] account:kRecoveryNetbianCookiesAccount];
+}
+
++ (void)restoreNncosCookiesIfNeeded {
+    if (gNncosCookiesRestored) {
+        return;
+    }
+    gNncosCookiesRestored = YES;
+    [self restoreCookiesForURL:[NSURL URLWithString:kNncosHomeURL] account:kRecoveryNncosCookiesAccount];
+}
+
++ (void)backupCookiesForURL:(NSURL *)url account:(NSString *)account {
+    NSMutableArray<NSString *> *pairs = [NSMutableArray array];
+    for (NSHTTPCookie *cookie in [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:url]) {
+        if (cookie.name.length > 0 && cookie.value.length > 0) {
+            [pairs addObject:[NSString stringWithFormat:@"%@=%@", cookie.name, cookie.value]];
+        }
+    }
+    if (pairs.count > 0) {
+        [self saveKeychainString:[pairs componentsJoinedByString:@"; "] account:account];
+    }
+}
+
++ (void)restoreCookiesForURL:(NSURL *)url account:(NSString *)account {
+    NSString *header = [self keychainStringForAccount:account];
+    if (header.length == 0 || url.host.length == 0) {
+        return;
+    }
+    for (NSString *pair in [header componentsSeparatedByString:@";"]) {
+        NSString *trimmed = [pair stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        NSRange separator = [trimmed rangeOfString:@"="];
+        if (separator.location == NSNotFound || separator.location == 0) {
+            continue;
+        }
+        NSString *name = [trimmed substringToIndex:separator.location];
+        NSString *value = [trimmed substringFromIndex:separator.location + 1];
+        if (value.length == 0) {
+            continue;
+        }
+        NSDictionary *properties = @{
+            NSHTTPCookieDomain: url.host,
+            NSHTTPCookiePath: @"/",
+            NSHTTPCookieName: name,
+            NSHTTPCookieValue: value,
+            NSHTTPCookieSecure: @YES
+        };
+        NSHTTPCookie *cookie = [NSHTTPCookie cookieWithProperties:properties];
+        if (cookie) {
+            [[NSHTTPCookieStorage sharedHTTPCookieStorage] setCookie:cookie];
+        }
+    }
+}
+
++ (void)restoreDownloadedRecordsIfNeeded {
+    NSString *currentRecords = [[NSUserDefaults standardUserDefaults] stringForKey:kNetbianDownloadedURLsKey] ?: @"";
+    if (currentRecords.length > 0) {
+        [self saveKeychainString:currentRecords account:kRecoveryDownloadedURLsAccount];
+        return;
+    }
+    NSString *restoredRecords = [self keychainStringForAccount:kRecoveryDownloadedURLsAccount];
+    if (restoredRecords.length > 0) {
+        [[NSUserDefaults standardUserDefaults] setObject:restoredRecords forKey:kNetbianDownloadedURLsKey];
+    }
+}
+
++ (void)saveKeychainString:(NSString *)value account:(NSString *)account {
+    if (account.length == 0 || value.length == 0) {
+        return;
+    }
+    NSData *data = [value dataUsingEncoding:NSUTF8StringEncoding];
+    NSDictionary *query = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: kRecoveryKeychainService,
+        (__bridge id)kSecAttrAccount: account
+    };
+    OSStatus updateStatus = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)@{
+        (__bridge id)kSecValueData: data
+    });
+    if (updateStatus == errSecItemNotFound) {
+        NSMutableDictionary *newItem = [query mutableCopy];
+        newItem[(__bridge id)kSecValueData] = data;
+        newItem[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
+        SecItemAdd((__bridge CFDictionaryRef)newItem, NULL);
+    }
+}
+
++ (NSString *)keychainStringForAccount:(NSString *)account {
+    if (account.length == 0) {
+        return @"";
+    }
+    NSDictionary *query = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: kRecoveryKeychainService,
+        (__bridge id)kSecAttrAccount: account,
+        (__bridge id)kSecReturnData: @YES,
+        (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne
+    };
+    CFTypeRef result = NULL;
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+    if (status != errSecSuccess || !result) {
+        return @"";
+    }
+    NSData *data = CFBridgingRelease(result);
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
+}
+
++ (void)deleteKeychainItemForAccount:(NSString *)account {
+    if (account.length == 0) {
+        return;
+    }
+    NSDictionary *query = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: kRecoveryKeychainService,
+        (__bridge id)kSecAttrAccount: account
+    };
+    SecItemDelete((__bridge CFDictionaryRef)query);
 }
 
 - (UIViewController *)topViewController {

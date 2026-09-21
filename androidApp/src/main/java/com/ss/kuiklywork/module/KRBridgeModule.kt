@@ -87,6 +87,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 getNncosLoginState(callback)
             }
 
+            "invalidateNncosLogin" -> {
+                invalidateNncosLogin(callback)
+            }
+
             "downloadNetbianImage" -> {
                 downloadNetbianImage(params, callback)
             }
@@ -222,6 +226,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     }
 
     private fun getNetbianDownloadRecords(callback: KuiklyRenderCallback?) {
+        restoreDownloadRecordsIfNeeded()
         invokeDownloadCallback(
             callback,
             mapOf("code" to 0, "urls" to netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty())
@@ -248,6 +253,11 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         )
     }
 
+    private fun invalidateNncosLogin(callback: KuiklyRenderCallback?) {
+        clearNncosLoginState()
+        callback?.invoke(mapOf("code" to 0, "isLoggedIn" to false))
+    }
+
     private fun markNetbianImageDownloaded(params: String?, callback: KuiklyRenderCallback?) {
         val url = runCatching { JSONObject(params ?: "{}").optString("url") }.getOrDefault("").trim()
         if (url.isEmpty()) {
@@ -260,9 +270,11 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             .filter { it.isNotEmpty() && it != url }
             .take(MAX_NETBIAN_DOWNLOAD_RECORDS - 1)
             .toList()
+        val downloadedUrls = (listOf(url) + records).joinToString("\n")
         netbianDownloadPrefs().edit()
-            .putString(KEY_NETBIAN_DOWNLOADED_URLS, (listOf(url) + records).joinToString("\n"))
+            .putString(KEY_NETBIAN_DOWNLOADED_URLS, downloadedUrls)
             .apply()
+        recoveryPrefs().edit().putString(KEY_RECOVERY_DOWNLOADED_URLS, downloadedUrls).apply()
         invokeDownloadCallback(callback, mapOf("code" to 0))
     }
 
@@ -445,8 +457,14 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     private fun browserCookieFor(requestUrl: String): String? {
         val host = runCatching { URL(requestUrl).host }.getOrNull() ?: return null
         val cookieUrl = when {
-            host.endsWith(NETBIAN_HOST) -> NETBIAN_HOME_URL
-            host.endsWith(NNCOS_HOST) -> NNCOS_HOME_URL
+            host.endsWith(NETBIAN_HOST) -> {
+                restoreCookiesIfNeeded(NETBIAN_HOME_URL, KEY_RECOVERY_NETBIAN_COOKIES, ::setNetbianCookiesRestored)
+                NETBIAN_HOME_URL
+            }
+            host.endsWith(NNCOS_HOST) -> {
+                restoreCookiesIfNeeded(NNCOS_HOME_URL, KEY_RECOVERY_NNCOS_COOKIES, ::setNncosCookiesRestored)
+                NNCOS_HOME_URL
+            }
             else -> return null
         }
         return CookieManager.getInstance().getCookie(cookieUrl)?.takeIf { it.isNotBlank() }
@@ -500,7 +518,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/KuiklyWork")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/\u7231\u58c1\u7eb8")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
             val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
@@ -512,7 +530,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             resolver.update(uri, values, null, null)
             return uri.toString()
         }
-        val dir = File(KRApplication.application.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "KuiklyWork")
+        val dir = File(KRApplication.application.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "\u7231\u58c1\u7eb8")
         if (!dir.exists()) {
             dir.mkdirs()
         }
@@ -528,7 +546,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/KuiklyWork")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/\u7231\u58c1\u7eb8")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
             val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
@@ -545,7 +563,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 throw error
             }
         }
-        val dir = File(KRApplication.application.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "KuiklyWork")
+        val dir = File(KRApplication.application.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "\u7231\u58c1\u7eb8")
         if (!dir.exists()) {
             dir.mkdirs()
         }
@@ -707,9 +725,11 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         fun markNetbianLoginSucceeded() {
             netbianLoginSucceeded = true
             netbianPrefs().edit().putBoolean(KEY_NETBIAN_LOGIN_SUCCEEDED, true).apply()
+            backupCookies(NETBIAN_HOME_URL, KEY_RECOVERY_NETBIAN_COOKIES)
         }
 
         fun isNetbianLoggedIn(): Boolean {
+            restoreCookiesIfNeeded(NETBIAN_HOME_URL, KEY_RECOVERY_NETBIAN_COOKIES, ::setNetbianCookiesRestored)
             if (hasNetbianLoginCookie()) {
                 markNetbianLoginSucceeded()
                 return true
@@ -765,9 +785,27 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         fun markNncosLoginSucceeded() {
             nncosLoginSucceeded = true
             nncosPrefs().edit().putBoolean(KEY_NNCOS_LOGIN_SUCCEEDED, true).apply()
+            backupCookies(NNCOS_HOME_URL, KEY_RECOVERY_NNCOS_COOKIES)
+        }
+
+        fun clearNncosLoginState() {
+            nncosLoginSucceeded = false
+            nncosPrefs().edit().putBoolean(KEY_NNCOS_LOGIN_SUCCEEDED, false).apply()
+            recoveryPrefs().edit().remove(KEY_RECOVERY_NNCOS_COOKIES).apply()
+            val cookieManager = CookieManager.getInstance()
+            cookieManager.getCookie(NNCOS_HOME_URL)
+                .orEmpty()
+                .split(";")
+                .map { it.substringBefore("=").trim() }
+                .filter { it.isNotEmpty() }
+                .forEach { name ->
+                    cookieManager.setCookie(NNCOS_HOME_URL, "$name=; Max-Age=0; Path=/; Secure")
+                }
+            cookieManager.flush()
         }
 
         fun isNncosLoggedIn(): Boolean {
+            restoreCookiesIfNeeded(NNCOS_HOME_URL, KEY_RECOVERY_NNCOS_COOKIES, ::setNncosCookiesRestored)
             if (hasNncosLoginCookie()) {
                 markNncosLoginSucceeded()
                 return true
@@ -792,6 +830,52 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             return !CookieManager.getInstance().getCookie(NNCOS_HOME_URL).isNullOrBlank()
         }
 
+        private fun restoreDownloadRecordsIfNeeded() {
+            val currentRecords = netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty()
+            if (currentRecords.isNotEmpty()) {
+                if (recoveryPrefs().getString(KEY_RECOVERY_DOWNLOADED_URLS, "").isNullOrEmpty()) {
+                    recoveryPrefs().edit().putString(KEY_RECOVERY_DOWNLOADED_URLS, currentRecords).apply()
+                }
+                return
+            }
+            val restoredRecords = recoveryPrefs().getString(KEY_RECOVERY_DOWNLOADED_URLS, "").orEmpty()
+            if (restoredRecords.isNotEmpty()) {
+                netbianDownloadPrefs().edit().putString(KEY_NETBIAN_DOWNLOADED_URLS, restoredRecords).apply()
+            }
+        }
+
+        private fun backupCookies(url: String, recoveryKey: String) {
+            CookieManager.getInstance().getCookie(url)
+                ?.takeIf { it.isNotBlank() }
+                ?.also { recoveryPrefs().edit().putString(recoveryKey, it).apply() }
+        }
+
+        private fun restoreCookiesIfNeeded(
+            url: String,
+            recoveryKey: String,
+            markRestored: () -> Boolean
+        ) {
+            if (markRestored()) return
+            val cookies = recoveryPrefs().getString(recoveryKey, "").orEmpty()
+            cookies.split(";")
+                .map { it.trim() }
+                .filter { it.contains("=") }
+                .forEach { CookieManager.getInstance().setCookie(url, "$it; Path=/; Secure") }
+            if (cookies.isNotEmpty()) CookieManager.getInstance().flush()
+        }
+
+        private fun setNetbianCookiesRestored(): Boolean {
+            val alreadyRestored = netbianCookiesRestored
+            netbianCookiesRestored = true
+            return alreadyRestored
+        }
+
+        private fun setNncosCookiesRestored(): Boolean {
+            val alreadyRestored = nncosCookiesRestored
+            nncosCookiesRestored = true
+            return alreadyRestored
+        }
+
         private fun netbianPrefs(): SharedPreferences {
             return KRApplication.application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         }
@@ -806,10 +890,20 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         private const val KEY_NNCOS_LOGIN_SUCCEEDED = "login_succeeded"
         private const val DOWNLOAD_PREFS_NAME = "netbian_download_records"
         private const val KEY_NETBIAN_DOWNLOADED_URLS = "downloaded_urls"
+        private const val RECOVERY_PREFS_NAME = "recovery_data"
+        private const val KEY_RECOVERY_NETBIAN_COOKIES = "netbian_cookies"
+        private const val KEY_RECOVERY_NNCOS_COOKIES = "nncos_cookies"
+        private const val KEY_RECOVERY_DOWNLOADED_URLS = "downloaded_urls"
         private const val MAX_NETBIAN_DOWNLOAD_RECORDS = 500
+        private var netbianCookiesRestored = false
+        private var nncosCookiesRestored = false
 
         private fun netbianDownloadPrefs(): SharedPreferences {
             return KRApplication.application.getSharedPreferences(DOWNLOAD_PREFS_NAME, Context.MODE_PRIVATE)
+        }
+
+        private fun recoveryPrefs(): SharedPreferences {
+            return KRApplication.application.getSharedPreferences(RECOVERY_PREFS_NAME, Context.MODE_PRIVATE)
         }
     }
 }

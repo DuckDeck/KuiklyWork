@@ -93,6 +93,10 @@ internal class BridgeModule : Module() {
         callNativeMethod(GET_NNCOS_LOGIN_STATE, null, responseCallbackFn)
     }
 
+    fun invalidateNncosLogin(responseCallbackFn: CallbackFn) {
+        callNativeMethod(INVALIDATE_NNCOS_LOGIN, null, responseCallbackFn)
+    }
+
     fun downloadNetbianImage(url: String, title: String, referer: String = "", responseCallbackFn: CallbackFn) {
         val methodArgs = JSONObject()
         methodArgs.put("url", url)
@@ -410,6 +414,7 @@ internal class BridgeModule : Module() {
         const val GET_NETBIAN_LOGIN_STATE = "getNetbianLoginState"
         const val OPEN_NNCOS_LOGIN = "openNncosLogin"
         const val GET_NNCOS_LOGIN_STATE = "getNncosLoginState"
+        const val INVALIDATE_NNCOS_LOGIN = "invalidateNncosLogin"
         const val DOWNLOAD_NETBIAN_IMAGE = "downloadNetbianImage"
         const val GET_NETBIAN_DOWNLOAD_RECORDS = "getNetbianDownloadRecords"
         const val MARK_NETBIAN_IMAGE_DOWNLOADED = "markNetbianImageDownloaded"

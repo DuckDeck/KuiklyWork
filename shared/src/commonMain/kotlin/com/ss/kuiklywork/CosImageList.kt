@@ -7,42 +7,30 @@ import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.directives.vforLazy
+import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.views.Image
+import com.tencent.kuikly.core.views.Input
+import com.tencent.kuikly.core.views.InputView
 import com.tencent.kuikly.core.views.List
 import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
-private const val NNCOS_HOST = "https://www.nncos.com"
 private const val NNCOS_MAX_RENDER_ITEMS = 120
 private const val NNCOS_REQUEST_TIMEOUT_MS = 15000
 private const val NNCOS_LIST_PADDING = 6f
 
 private data class CosCategory(val name: String, val url: String)
 
-internal data class CosImageItem(
-    val imageUrl: String,
-    val title: String,
-    val detailUrl: String,
-    val categoryName: String,
-    val publishedAt: String,
-    val isVip: Boolean = false,
-    val downloaded: Boolean = false
-)
-
-private data class CosPageResult(
-    val items: List<CosImageItem>,
-    val hasNextPage: Boolean
-)
-
 private data class CosCategoryCache(
     val items: List<CosImageItem>,
     val pageIndex: Int,
-    val noMore: Boolean
+    val noMore: Boolean,
+    val nextPageUrl: String?
 )
 
 private data class CosImageRow(val left: CosImageItem, val right: CosImageItem?)
@@ -70,14 +58,23 @@ internal class CosImageListPage : BasePager() {
     var selectedCategoryIndex by observable(0)
     var nncosLoggedIn by observable(false)
     var nncosLoginChecking by observable(false)
+    var searchVisible by observable(false)
+    var searchInputText by observable("")
+    var searchKeyword by observable("")
+        private set
+    var searchInput: InputView? = null
 
     private var pageIndex = 0
+    private var nextPageUrl: String? = null
     private var requestId = 0
     private val categoryCache = mutableMapOf<String, CosCategoryCache>()
     private var downloadedDetailUrls = emptySet<String>()
 
     private val currentCategory: CosCategory
         get() = COS_CATEGORY_LIST[selectedCategoryIndex]
+
+    private val currentListUrl: String
+        get() = if (searchKeyword.isEmpty()) currentCategory.url else nncosSearchUrl(searchKeyword)
 
     override fun created() {
         super.created()
@@ -137,24 +134,68 @@ internal class CosImageListPage : BasePager() {
     }
 
     fun selectCategory(index: Int) {
-        if (index == selectedCategoryIndex || loading || loadingMore) return
+        if (index == selectedCategoryIndex && searchKeyword.isEmpty()) return
+        searchInput?.blur()
+        searchInput = null
+        searchKeyword = ""
+        searchInputText = ""
+        searchVisible = false
         selectedCategoryIndex = index
-        val cached = categoryCache[currentCategory.url]
+        restoreCurrentList()
+    }
+
+    fun toggleSearch() {
+        if (searchVisible) {
+            searchInput?.blur()
+            searchInput = null
+            searchVisible = false
+            searchInputText = ""
+            if (searchKeyword.isNotEmpty()) {
+                searchKeyword = ""
+                restoreCurrentList()
+            }
+        } else {
+            searchInputText = searchKeyword
+            searchVisible = true
+        }
+    }
+
+    fun submitSearch() {
+        val keyword = searchInputText.trim()
+        if (keyword.isEmpty()) {
+            acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast("请输入搜索关键词")
+            return
+        }
+        searchInput?.blur()
+        searchKeyword = keyword
+        refreshImages()
+    }
+
+    private fun restoreCurrentList() {
+        // Ignore responses and timeouts from the previous category or search.
+        requestId++
+        loading = false
+        loadingMore = false
+        val cached = categoryCache[currentListUrl]
         if (cached == null) {
             refreshImages()
             return
         }
         acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
-            .log("CosImageList restore cache category=${currentCategory.url} total=${cached.items.size}")
+            .log("CosImageList restore cache url=$currentListUrl total=${cached.items.size}")
         imageItems = cached.items
         syncImageRows()
         pageIndex = cached.pageIndex
         noMore = cached.noMore
+        nextPageUrl = cached.nextPageUrl
         statusMessage = ""
     }
 
     fun refreshImages() {
         pageIndex = 0
+        nextPageUrl = null
+        loading = false
+        loadingMore = false
         noMore = false
         imageItems = emptyList()
         syncImageRows()
@@ -167,9 +208,10 @@ internal class CosImageListPage : BasePager() {
     }
 
     private fun loadPage(page: Int, append: Boolean) {
+        val sourceUrl = currentListUrl
+        val pageUrl = if (append) nextPageUrl ?: return else sourceUrl
         val bridgeModule = acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
         val currentRequestId = ++requestId
-        val pageUrl = currentCategory.pageUrl(page)
         bridgeModule.log("CosImageList loadPage page=$page append=$append url=$pageUrl")
         if (append) loadingMore = true else loading = true
         statusMessage = ""
@@ -185,7 +227,8 @@ internal class CosImageListPage : BasePager() {
         bridgeModule.fetchHtml(pageUrl) { response ->
             val code = response?.optInt("code", -1) ?: -1
             val html = response?.optString("body", "") ?: ""
-            val result = if (code == 0) parseNncosImages(html) else CosPageResult(emptyList(), false)
+            if (currentRequestId != requestId) return@fetchHtml
+            val result = if (code == 0) parseNncosImages(html) else CosPageResult(emptyList(), null)
             val errorMessage = response?.optString("message", "\u8bf7\u6c42\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5") ?: "\u8bf7\u6c42\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5"
             setTimeout(0) {
                 if (currentRequestId != requestId) return@setTimeout
@@ -196,11 +239,12 @@ internal class CosImageListPage : BasePager() {
                     return@setTimeout
                 }
                 if (result.items.isEmpty()) {
+                    nextPageUrl = null
+                    noMore = true
                     if (append) {
-                        noMore = true
                         statusMessage = ""
                     } else {
-                        statusMessage = "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247"
+                        statusMessage = if (searchKeyword.isNotEmpty()) "没有找到相关图片，试试其他关键词" else "没有解析到图片"
                     }
                     return@setTimeout
                 }
@@ -209,9 +253,10 @@ internal class CosImageListPage : BasePager() {
                 imageItems = merged.take(NNCOS_MAX_RENDER_ITEMS)
                 syncImageRows()
                 pageIndex = page
-                noMore = !result.hasNextPage || merged.size >= NNCOS_MAX_RENDER_ITEMS
+                nextPageUrl = result.nextPageUrl?.takeIf { it != pageUrl }
+                noMore = nextPageUrl == null || merged.size >= NNCOS_MAX_RENDER_ITEMS
                 statusMessage = ""
-                categoryCache[currentCategory.url] = CosCategoryCache(imageItems, pageIndex, noMore)
+                categoryCache[sourceUrl] = CosCategoryCache(imageItems, pageIndex, noMore, nextPageUrl)
                 bridgeModule.log("CosImageList page applied page=$page total=${imageItems.size} noMore=$noMore")
             }
         }
@@ -236,7 +281,12 @@ internal class CosImageListPage : BasePager() {
                     backDisable = false
                 }
             }
-            CosCategoryMenu(ctx)
+            vif({ ctx.searchVisible }) {
+                CosSearchBar(ctx)
+            }
+            vif({ ctx.searchKeyword.isEmpty() }) {
+                CosCategoryMenu(ctx)
+            }
             CosLoginBar(ctx)
             List {
                 attr {
@@ -280,6 +330,25 @@ internal class CosImageListPage : BasePager() {
                 }
                 CosLoadMoreFooter(ctx)
             }
+            View {
+                attr {
+                    width(64f)
+                    height(44f)
+                    absolutePosition(top = ctx.pageData.statusBarHeight, right = 0f)
+                    allCenter()
+                }
+                event {
+                    click { ctx.toggleSearch() }
+                }
+                Text {
+                    attr {
+                        text(if (ctx.searchVisible) "取消" else "搜索")
+                        fontSize(14f)
+                        color(Color(0xFF1E6BFF))
+                        fontWeightBold()
+                    }
+                }
+            }
         }
     }
 
@@ -288,6 +357,7 @@ internal class CosImageListPage : BasePager() {
             loading -> "\u6b63\u5728\u52a0\u8f7d..."
             loadingMore -> "\u6b63\u5728\u52a0\u8f7d\u7b2c ${pageIndex + 1} \u9875..."
             noMore && imageItems.isNotEmpty() -> "\u6ca1\u6709\u66f4\u591a\u4e86"
+            noMore && searchKeyword.isNotEmpty() && imageItems.isEmpty() -> ""
             statusMessage.isNotEmpty() && imageItems.isEmpty() -> "\u91cd\u8bd5"
             imageItems.isEmpty() -> ""
             else -> "\u52a0\u8f7d\u66f4\u591a"
@@ -295,91 +365,71 @@ internal class CosImageListPage : BasePager() {
     }
 }
 
-private fun CosCategory.pageUrl(page: Int): String {
-    if (page <= 1) return url
-    return "${url.trimEnd('/')}/page/$page"
-}
-
 private fun mergeCosImageItems(oldItems: List<CosImageItem>, newItems: List<CosImageItem>): List<CosImageItem> {
     val seenUrls = mutableSetOf<String>()
     return (oldItems + newItems).filter { item -> seenUrls.add(item.imageUrl) }
 }
 
-private fun parseNncosImages(html: String): CosPageResult {
-    val articleRegex = Regex("<article\\b[^>]*class=[\"'][^\"']*post-item[^\"']*post-grid[^\"']*[\"'][^>]*>[\\s\\S]*?</article>", RegexOption.IGNORE_CASE)
-    val anchorRegex = Regex("<a\\b(?=[^>]*\\bdata-bg\\s*=)[^>]*>", RegexOption.IGNORE_CASE)
-    val items = mutableListOf<CosImageItem>()
-    val seenUrls = mutableSetOf<String>()
-    articleRegex.findAll(html).forEach { article ->
-        val anchor = anchorRegex.find(article.value)?.value ?: return@forEach
-        val imageUrl = anchor.extractCosHtmlAttr("data-bg")?.toAbsoluteCosUrl() ?: return@forEach
-        val detailUrl = anchor.extractCosHtmlAttr("href")?.toAbsoluteCosUrl() ?: return@forEach
-        if (!seenUrls.add(imageUrl)) return@forEach
-        val title = anchor.extractCosHtmlAttr("title")
-            ?.decodeCosHtmlEntities()
-            ?.trim()
-            .orEmpty()
-            .ifEmpty { "\u534a\u6b21\u5143\u56fe" }
-        val categoryName = article.value.extractCosCategoryName()
-        val publishedAt = article.value.extractCosPublishedAt()
-        val isVip = article.value.hasCosVipIcon()
-        items.add(CosImageItem(imageUrl, title, detailUrl, categoryName, publishedAt, isVip))
+private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosSearchBar(ctx: CosImageListPage) {
+    View {
+        attr {
+            height(52f)
+            paddingLeft(12f)
+            paddingRight(12f)
+            flexDirectionRow()
+            alignItemsCenter()
+            backgroundColor(Color.WHITE)
+        }
+        View {
+            attr {
+                flex(1f)
+                height(36f)
+                paddingLeft(12f)
+                paddingRight(12f)
+                borderRadius(8f)
+                backgroundColor(Color(0xFFF2F2F7))
+            }
+            Input {
+                ref { ctx.searchInput = it.view }
+                attr {
+                    flex(1f)
+                    height(36f)
+                    fontSize(14f)
+                    color(Color(0xFF333333))
+                    placeholder("输入关键词搜索图片")
+                    placeholderColor(Color(0xFF999999))
+                    text(ctx.searchInputText)
+                    returnKeyTypeSearch()
+                    autofocus(true)
+                }
+                event {
+                    textDidChange { ctx.searchInputText = it.text }
+                    inputReturn {
+                        ctx.searchInputText = it.text
+                        ctx.submitSearch()
+                    }
+                }
+            }
+        }
+        View {
+            attr {
+                width(56f)
+                height(44f)
+                allCenter()
+            }
+            event {
+                click { ctx.submitSearch() }
+            }
+            Text {
+                attr {
+                    text("搜索")
+                    fontSize(14f)
+                    color(Color(0xFF1E6BFF))
+                    fontWeightBold()
+                }
+            }
+        }
     }
-    val hasNextPage = Regex("<a\\b[^>]*class=[\"'][^\"']*page-next[^\"']*[\"'][^>]*href=", RegexOption.IGNORE_CASE)
-        .containsMatchIn(html)
-    return CosPageResult(items, hasNextPage)
-}
-
-private fun String.extractCosHtmlAttr(name: String): String? {
-    val regex = Regex("$name\\s*=\\s*([\"'])(.*?)\\1", RegexOption.IGNORE_CASE)
-    return regex.find(this)?.groupValues?.getOrNull(2)
-}
-
-private fun String.toAbsoluteCosUrl(): String {
-    return when {
-        startsWith("//") -> "https:$this"
-        startsWith("http://") || startsWith("https://") -> this
-        startsWith("/") -> "$NNCOS_HOST$this"
-        else -> "$NNCOS_HOST/$this"
-    }
-}
-
-private fun String.decodeCosHtmlEntities(): String {
-    return replace("&amp;", "&")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&nbsp;", " ")
-}
-
-private fun String.extractCosCategoryName(): String {
-    val categoryBlock = Regex(
-        "<div\\b[^>]*class=[\"'][^\"']*entry-category-dot[^\"']*[\"'][^>]*>[\\s\\S]*?</div>",
-        RegexOption.IGNORE_CASE
-    ).find(this)?.value ?: return ""
-    return Regex("<a\\b[^>]*>([\\s\\S]*?)</a>", RegexOption.IGNORE_CASE)
-        .find(categoryBlock)?.groupValues?.getOrNull(1)
-        ?.replace(Regex("<[^>]+>"), "")
-        ?.decodeCosHtmlEntities()
-        ?.trim()
-        .orEmpty()
-}
-
-private fun String.extractCosPublishedAt(): String {
-    return Regex("<time\\b[^>]*class=[\"'][^\"']*pub-date[^\"']*[\"'][^>]*>([\\s\\S]*?)</time>", RegexOption.IGNORE_CASE)
-        .find(this)?.groupValues?.getOrNull(1)
-        ?.replace(Regex("<[^>]+>"), "")
-        ?.decodeCosHtmlEntities()
-        ?.trim()
-        .orEmpty()
-}
-
-private fun String.hasCosVipIcon(): Boolean {
-    return Regex(
-        "<[^>]+class=[\"'][^\"']*entry-vip-icon[^\"']*[\"']",
-        RegexOption.IGNORE_CASE
-    ).containsMatchIn(this)
 }
 
 private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosCategoryMenu(ctx: CosImageListPage) {

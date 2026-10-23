@@ -3,6 +3,7 @@ package com.ss.kuiklywork
 import com.ss.kuiklywork.base.BasePager
 import com.ss.kuiklywork.base.BridgeModule
 import com.ss.kuiklywork.base.setTimeout
+import com.ss.kuiklywork.base.parseNncosLoginState
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewBuilder
@@ -57,6 +58,7 @@ internal class CosImageListPage : BasePager() {
     var statusMessage by observable("")
     var selectedCategoryIndex by observable(0)
     var nncosLoggedIn by observable(false)
+    var nncosLoginKnown by observable(false)
     var nncosLoginChecking by observable(false)
     var searchVisible by observable(false)
     var searchInputText by observable("")
@@ -67,6 +69,7 @@ internal class CosImageListPage : BasePager() {
     private var pageIndex = 0
     private var nextPageUrl: String? = null
     private var requestId = 0
+    private var loginStateRequestId = 0
     private val categoryCache = mutableMapOf<String, CosCategoryCache>()
     private var downloadedDetailUrls = emptySet<String>()
 
@@ -117,15 +120,27 @@ internal class CosImageListPage : BasePager() {
     private fun refreshLoginState() {
         if (nncosLoginChecking) return
         nncosLoginChecking = true
+        val currentLoginRequestId = ++loginStateRequestId
         acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).getNncosLoginState { response ->
+            if (currentLoginRequestId != loginStateRequestId) return@getNncosLoginState
             nncosLoginChecking = false
-            nncosLoggedIn = response?.optBoolean("isLoggedIn", false) ?: false
+            if (response?.optInt("code", -1) == 0) {
+                nncosLoggedIn = response.optBoolean("isLoggedIn", false)
+                nncosLoginKnown = true
+            }
         }
     }
 
     fun openNncosLogin() {
+        val currentLoginRequestId = ++loginStateRequestId
+        nncosLoginChecking = true
         acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).openNncosLogin { response ->
-            nncosLoggedIn = response?.optBoolean("isLoggedIn", false) ?: false
+            if (currentLoginRequestId != loginStateRequestId) return@openNncosLogin
+            nncosLoginChecking = false
+            if (response?.optInt("code", -1) == 0) {
+                nncosLoggedIn = response.optBoolean("isLoggedIn", false)
+                nncosLoginKnown = true
+            }
             val message = response?.optString("message", "") ?: ""
             if (response?.optInt("code", 0) != 0 && message.isNotEmpty()) {
                 acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast(message)
@@ -212,6 +227,7 @@ internal class CosImageListPage : BasePager() {
         val pageUrl = if (append) nextPageUrl ?: return else sourceUrl
         val bridgeModule = acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
         val currentRequestId = ++requestId
+        val currentLoginRequestId = loginStateRequestId
         bridgeModule.log("CosImageList loadPage page=$page append=$append url=$pageUrl")
         if (append) loadingMore = true else loading = true
         statusMessage = ""
@@ -237,6 +253,14 @@ internal class CosImageListPage : BasePager() {
                 if (code != 0) {
                     statusMessage = errorMessage
                     return@setTimeout
+                }
+                if (currentLoginRequestId == loginStateRequestId) {
+                    parseNncosLoginState(html)?.let { loggedIn ->
+                        loginStateRequestId++
+                        nncosLoginChecking = false
+                        nncosLoggedIn = loggedIn
+                        nncosLoginKnown = true
+                    }
                 }
                 if (result.items.isEmpty()) {
                     nextPageUrl = null
@@ -477,7 +501,12 @@ private fun com.tencent.kuikly.core.base.ViewContainer<*, *>.CosLoginBar(ctx: Co
         }
         Text {
             attr {
-                text(if (ctx.nncosLoggedIn) "\u534a\u6b21\u5143\u56fe\uff1a\u5df2\u767b\u5f55" else "\u534a\u6b21\u5143\u56fe\uff1a\u672a\u767b\u5f55")
+                text(when {
+                    ctx.nncosLoginChecking -> "半次元图：正在检查登录状态"
+                    !ctx.nncosLoginKnown -> "半次元图：登录状态待确认"
+                    ctx.nncosLoggedIn -> "半次元图：已登录"
+                    else -> "半次元图：未登录"
+                })
                 fontSize(13f)
                 color(Color(0xFF666666))
             }

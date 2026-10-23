@@ -788,19 +788,19 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             backupCookies(NNCOS_HOME_URL, KEY_RECOVERY_NNCOS_COOKIES)
         }
 
+        fun prepareNncosLoginCookies() {
+            restoreCookiesIfNeeded(NNCOS_HOME_URL, KEY_RECOVERY_NNCOS_COOKIES, ::setNncosCookiesRestored)
+            val cookieManager = CookieManager.getInstance()
+            expireNncosCookies(cookieManager::getCookie, cookieManager::setCookie, orphanedAuthOnly = true)
+            cookieManager.flush()
+        }
+
         fun clearNncosLoginState() {
             nncosLoginSucceeded = false
             nncosPrefs().edit().putBoolean(KEY_NNCOS_LOGIN_SUCCEEDED, false).apply()
             recoveryPrefs().edit().remove(KEY_RECOVERY_NNCOS_COOKIES).apply()
             val cookieManager = CookieManager.getInstance()
-            cookieManager.getCookie(NNCOS_HOME_URL)
-                .orEmpty()
-                .split(";")
-                .map { it.substringBefore("=").trim() }
-                .filter { it.isNotEmpty() }
-                .forEach { name ->
-                    cookieManager.setCookie(NNCOS_HOME_URL, "$name=; Max-Age=0; Path=/; Secure")
-                }
+            expireNncosCookies(cookieManager::getCookie, cookieManager::setCookie)
             cookieManager.flush()
         }
 

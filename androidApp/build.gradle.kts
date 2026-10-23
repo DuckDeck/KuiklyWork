@@ -32,6 +32,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation(project(":shared"))
 
     implementation("androidx.recyclerview:recyclerview:1.2.1")

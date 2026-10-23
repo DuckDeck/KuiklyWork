@@ -27,6 +27,7 @@ class NncosLoginActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CookieManager.getInstance().setAcceptCookie(true)
+        KRBridgeModule.prepareNncosLoginCookies()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

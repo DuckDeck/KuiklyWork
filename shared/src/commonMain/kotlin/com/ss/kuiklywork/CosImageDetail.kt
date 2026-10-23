@@ -2,10 +2,10 @@ package com.ss.kuiklywork
 
 import com.ss.kuiklywork.base.BasePager
 import com.ss.kuiklywork.base.BridgeModule
+import com.ss.kuiklywork.base.parseNncosLoginState
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewBuilder
-import com.tencent.kuikly.core.directives.vfor
 import com.tencent.kuikly.core.directives.vforLazy
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.reactive.handler.observable
@@ -19,6 +19,8 @@ import com.tencent.kuikly.core.views.View
 private const val COS_DETAIL_HOST = "https://www.nncos.com"
 private const val COS_DETAIL_FALLBACK_IMAGE_HEIGHT_RATIO = 1.5f
 
+internal enum class CosDetailImageLoadState { LOADING, LOADED, FAILED }
+
 @Page("cosImageDetail")
 internal class CosImageDetailPage : BasePager() {
 
@@ -26,12 +28,16 @@ internal class CosImageDetailPage : BasePager() {
     var detailUrl by observable("")
     var imageUrls by observableList<String>()
     var imageAspectRatios by observable(emptyMap<String, Float>())
+    private var imageLoadStates by observable(emptyMap<String, CosDetailImageLoadState>())
     var statusText by observable("")
     var downloading by observable(false)
     var downloadingIndex by observable(0)
     var downloaded by observable(false)
     private var detailLoadRequestId = 0
-    private var loginExpired = false
+    private var loginExpired by observable(false)
+    private var loginRenewing by observable(false)
+    private var loginStateClearing = false
+    private var contentNotice = ""
 
     override fun created() {
         super.created()
@@ -58,9 +64,11 @@ internal class CosImageDetailPage : BasePager() {
         }
         val requestId = ++detailLoadRequestId
         loginExpired = false
+        contentNotice = ""
         statusText = "\u6b63\u5728\u52a0\u8f7d..."
         imageUrls.clear()
         imageAspectRatios = emptyMap()
+        imageLoadStates = emptyMap()
         loadDetailPages(
             pendingUrls = mutableListOf(detailUrl),
             loadedUrls = mutableSetOf(),
@@ -94,13 +102,23 @@ internal class CosImageDetailPage : BasePager() {
             }
             val result = parseNncosDetail(html, pageUrl)
             if (result.title.isNotEmpty()) titleText = result.title
-            if (result.hasHiddenVipContent && result.imageUrls.isEmpty()) {
-                pendingUrls.clear()
-                markNncosLoginExpired()
-                return@fetchHtml
-            }
+            // Preview images remain useful even when the member section is locked.
             val knownImageUrls = imageUrls.toHashSet()
             imageUrls.addAll(result.imageUrls.filter { knownImageUrls.add(it) })
+            if (result.hasHiddenVipContent) {
+                pendingUrls.clear()
+                contentNotice = when (result.isLoggedIn) {
+                    true -> "当前账号无法查看完整会员内容，以上为可查看的图片"
+                    false -> "请重新登录或开通会员查看完整图片"
+                    null -> "无法确认登录状态，以上为可查看的图片，点击重试"
+                }
+                if (result.requiresLogin) {
+                    markNncosLoginExpired()
+                } else {
+                    statusText = contentNotice
+                }
+                return@fetchHtml
+            }
             result.pageUrls
                 .filter { it !in loadedUrls && it !in pendingUrls }
                 .forEach { pendingUrls.add(it) }
@@ -116,11 +134,29 @@ internal class CosImageDetailPage : BasePager() {
     private fun markNncosLoginExpired() {
         if (loginExpired) return
         loginExpired = true
-        statusText = "登录已过期，请返回后重新登录"
-        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).invalidateNncosLogin { }
+        statusText = contentNotice
+        loginStateClearing = true
+        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).invalidateNncosLogin {
+            loginStateClearing = false
+        }
+    }
+
+    private fun renewNncosLogin() {
+        if (loginRenewing || loginStateClearing) return
+        loginRenewing = true
+        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).openNncosLogin { response ->
+            loginRenewing = false
+            if (response?.optInt("code", -1) == 0 && response.optBoolean("isLoggedIn", false)) {
+                loadDetail()
+            }
+        }
     }
 
     fun downloadAllImages() {
+        if (loginExpired) {
+            renewNncosLogin()
+            return
+        }
         if (downloading) return
         if (imageUrls.isEmpty()) {
             acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast("\u6ca1\u6709\u53ef\u4e0b\u8f7d\u7684\u56fe\u7247")
@@ -136,7 +172,7 @@ internal class CosImageDetailPage : BasePager() {
             acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).markImageDownloaded(detailUrl) { response ->
                 downloading = false
                 downloadingIndex = 0
-                statusText = ""
+                statusText = contentNotice
                 if (response?.optInt("code", -1) == 0) {
                     downloaded = true
                     acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
@@ -156,7 +192,7 @@ internal class CosImageDetailPage : BasePager() {
             if (response?.optInt("code", -1) != 0) {
                 downloading = false
                 downloadingIndex = 0
-                statusText = ""
+                statusText = contentNotice
                 val message = response?.optString("message", "\u4e0b\u8f7d\u5931\u8d25") ?: "\u4e0b\u8f7d\u5931\u8d25"
                 acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast(message)
                 return@downloadImage
@@ -170,8 +206,18 @@ internal class CosImageDetailPage : BasePager() {
         return pageData.pageViewWidth * ratio
     }
 
-    private fun navigationTitle(): String {
-        return if (titleText.length <= 10) titleText else "${titleText.take(10)}..."
+    internal fun navigationTitle(): String {
+        val shortTitle = if (titleText.length <= 10) titleText else "${titleText.take(10)}..."
+        return "$shortTitle（${imageUrls.size}张）"
+    }
+
+    internal fun imageLoadState(imageUrl: String): CosDetailImageLoadState =
+        imageLoadStates[imageUrl] ?: CosDetailImageLoadState.LOADING
+
+    internal fun completeImageLoad(imageUrl: String, succeeded: Boolean, requestId: Int = detailLoadRequestId) {
+        if (requestId != detailLoadRequestId || imageUrl !in imageUrls) return
+        val state = if (succeeded) CosDetailImageLoadState.LOADED else CosDetailImageLoadState.FAILED
+        if (imageLoadStates[imageUrl] != state) imageLoadStates = imageLoadStates + (imageUrl to state)
     }
 
     private fun updateImageAspectRatio(imageUrl: String, imageWidth: Int, imageHeight: Int) {
@@ -229,6 +275,8 @@ internal class CosImageDetailPage : BasePager() {
                     attr {
                         text(
                             when {
+                                ctx.loginRenewing -> "登录中"
+                                ctx.loginExpired -> "重新登录"
                                 ctx.downloading -> "\u4e0b\u8f7d\u4e2d"
                                 ctx.downloaded -> "\u91cd\u65b0\u4e0b\u8f7d"
                                 else -> "\u4e0b\u8f7d"
@@ -247,14 +295,69 @@ internal class CosImageDetailPage : BasePager() {
                     firstContentLoadMaxIndex(4)
                     preloadViewDistance(ctx.pageData.pageViewHeight)
                 }
+                vforLazy({ ctx.imageUrls }, maxLoadItem = 6) { imageUrl, _, _ ->
+                    val requestId = ctx.detailLoadRequestId
+                    View {
+                        attr {
+                            width(ctx.pageData.pageViewWidth)
+                            height(ctx.imageHeight(imageUrl))
+                        }
+                        Image {
+                            attr {
+                                src(imageUrl)
+                                width(ctx.pageData.pageViewWidth)
+                                height(ctx.imageHeight(imageUrl))
+                                resizeContain()
+                            }
+                            event {
+                                loadSuccess { ctx.completeImageLoad(imageUrl, succeeded = true, requestId = requestId) }
+                                loadFailure { ctx.completeImageLoad(imageUrl, succeeded = false, requestId = requestId) }
+                                loadResolution { resolution ->
+                                    if (requestId == ctx.detailLoadRequestId) {
+                                        ctx.updateImageAspectRatio(imageUrl, resolution.width, resolution.height)
+                                    }
+                                }
+                            }
+                        }
+                        vif({ ctx.imageLoadState(imageUrl) != CosDetailImageLoadState.LOADED }) {
+                            View {
+                                attr {
+                                    absolutePosition(top = 0f, left = 0f)
+                                    width(ctx.pageData.pageViewWidth)
+                                    height(ctx.imageHeight(imageUrl))
+                                    allCenter()
+                                }
+                                vif({ ctx.imageLoadState(imageUrl) == CosDetailImageLoadState.LOADING }) {
+                                    ActivityIndicator {
+                                        attr { isGrayStyle(false) }
+                                    }
+                                }
+                                Text {
+                                    attr {
+                                        text(if (ctx.imageLoadState(imageUrl) == CosDetailImageLoadState.FAILED) "图片加载失败" else "加载中...")
+                                        marginTop(8f)
+                                        fontSize(13f)
+                                        color(Color(0xFFB5B5B5))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 View {
                     attr {
-                        height(if (ctx.statusText.isNotEmpty() && ctx.imageUrls.isEmpty()) 48f else 0f)
+                        height(if (ctx.statusText.isNotEmpty()) 72f else 0f)
+                        paddingLeft(16f)
+                        paddingRight(16f)
                         allCenter()
                     }
                     event {
                         click {
-                            if (ctx.imageUrls.isEmpty() && !ctx.downloading) ctx.loadDetail()
+                            if (ctx.loginExpired) {
+                                ctx.renewNncosLogin()
+                            } else if (!ctx.downloading) {
+                                ctx.loadDetail()
+                            }
                         }
                     }
                     Text {
@@ -265,34 +368,23 @@ internal class CosImageDetailPage : BasePager() {
                         }
                     }
                 }
-                vforLazy({ ctx.imageUrls }, maxLoadItem = 6) { imageUrl, _, _ ->
-                    Image {
-                        attr {
-                            src(imageUrl)
-                            width(ctx.pageData.pageViewWidth)
-                            height(ctx.imageHeight(imageUrl))
-                            resizeContain()
-                        }
-                        event {
-                            loadResolution { resolution ->
-                                ctx.updateImageAspectRatio(imageUrl, resolution.width, resolution.height)
-                            }
-                        }
-                    }
-                }
             }
         }
     }
 }
 
-private data class CosDetailResult(
+internal data class CosDetailResult(
     val title: String,
     val imageUrls: List<String>,
     val pageUrls: List<String>,
-    val hasHiddenVipContent: Boolean
-)
+    val hasHiddenVipContent: Boolean,
+    val isLoggedIn: Boolean?
+) {
+    val requiresLogin: Boolean
+        get() = hasHiddenVipContent && isLoggedIn == false
+}
 
-private fun parseNncosDetail(html: String, pageUrl: String): CosDetailResult {
+internal fun parseNncosDetail(html: String, pageUrl: String): CosDetailResult {
     val title = Regex("<h1\\b[^>]*>([\\s\\S]*?)</h1>", RegexOption.IGNORE_CASE)
         .find(html)?.groupValues?.getOrNull(1)
         ?.replace(Regex("<[^>]+>"), "")
@@ -311,9 +403,22 @@ private fun parseNncosDetail(html: String, pageUrl: String): CosDetailResult {
         downloadWidgetStart > contentStart -> html.substring(contentStart, downloadWidgetStart)
         else -> html.substring(contentStart)
     }
-    val content = postContent ?: entryContent
-    val seenUrls = mutableSetOf<String>()
-    val imageUrls = Regex("<img\\b[^>]*>", RegexOption.IGNORE_CASE).findAll(content)
+    val content = (postContent ?: entryContent).replace(
+        Regex("<!--[\\s\\S]*?-->|<(script|style)\\b[^>]*>[\\s\\S]*?</\\1\\s*>", RegexOption.IGNORE_CASE),
+        ""
+    )
+    val imageUrls = content.cosDetailImageUrls()
+    return CosDetailResult(
+        title = title,
+        imageUrls = imageUrls,
+        pageUrls = parseNncosDetailPageUrls(content, pageUrl),
+        hasHiddenVipContent = content.hasLockedCosVipContent(),
+        isLoggedIn = parseNncosLoginState(html)
+    )
+}
+
+private fun String.cosDetailImageUrls(): List<String> {
+    return Regex("<img\\b[^>]*>", RegexOption.IGNORE_CASE).findAll(this)
         .mapNotNull { tag ->
             tag.value.extractCosDetailAttribute("data-src")
                 ?: tag.value.extractCosDetailAttribute("data-original")
@@ -321,15 +426,42 @@ private fun parseNncosDetail(html: String, pageUrl: String): CosDetailResult {
         }
         .map { it.toAbsoluteCosDetailUrl() }
         .filter { it.isNncosDetailImageUrl() }
-        .filter { seenUrls.add(it) }
+        .filterNot { it.substringBefore('?').substringBefore('#').equals("https://img.nncos.com/v.png", ignoreCase = true) }
+        .distinct()
         .toList()
-    return CosDetailResult(
-        title = title,
-        imageUrls = imageUrls,
-        pageUrls = parseNncosDetailPageUrls(content, pageUrl),
-        hasHiddenVipContent = content.contains("viphidecontent", ignoreCase = true)
-    )
 }
+
+private fun String.hasLockedCosVipContent(): Boolean {
+    val tags = Regex("<([a-z][\\w:-]*)\\b[^>]*>", RegexOption.IGNORE_CASE).findAll(this).toList()
+    val regions = tags.filter { tag ->
+        val classes = tag.value.cosDetailClasses()
+        "vip-hide-content" in classes || "viphidecontent" in classes
+    }
+    if (regions.isEmpty()) return tags.any { "vip-hide-tips" in it.value.cosDetailClasses() }
+    return regions.any { opening ->
+        // Locked and unlocked sections share the same classes. Inspect each section,
+        // not the article-wide preview count, and account for nested wrapper elements.
+        val name = opening.groupValues[1]
+        var depth = 1
+        var end = length
+        for (tag in Regex("</?$name\\b[^>]*>", RegexOption.IGNORE_CASE)
+            .findAll(this, opening.range.last + 1)) {
+            if (tag.value.startsWith("</")) depth--
+            else if (!tag.value.endsWith("/>")) depth++
+            if (depth == 0) {
+                end = tag.range.first
+                break
+            }
+        }
+        val region = substring(opening.range.last + 1, end)
+        val hasUnlockButton = Regex("<a\\b[^>]*>", RegexOption.IGNORE_CASE)
+            .findAll(region).any { "zb-vip-btn" in it.value.cosDetailClasses() }
+        hasUnlockButton || region.cosDetailImageUrls().isEmpty()
+    }
+}
+
+private fun String.cosDetailClasses(): List<String> =
+    extractCosDetailAttribute("class")?.lowercase()?.split(Regex("\\s+")) ?: emptyList()
 
 /** Returns the page links emitted by WordPress's in-post pagination widget. */
 private fun parseNncosDetailPageUrls(html: String, currentPageUrl: String): List<String> {

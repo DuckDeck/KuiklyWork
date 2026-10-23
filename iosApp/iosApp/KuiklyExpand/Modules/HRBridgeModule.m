@@ -39,7 +39,7 @@ static BOOL gNncosCookiesRestored = NO;
 + (void)syncWKNetbianCookiesWithCompletion:(dispatch_block_t)completion;
 + (void)finishNncosLoginWithSuccess:(BOOL)success message:(NSString *)message;
 + (void)markNncosLoginSucceeded;
-+ (void)clearNncosLoginState;
++ (void)clearNncosLoginStateWithCompletion:(dispatch_block_t)completion;
 + (BOOL)isNncosLoggedIn;
 + (BOOL)hasNncosCookie;
 + (BOOL)hasNncosLoginCookie;
@@ -420,10 +420,11 @@ static BOOL gNncosCookiesRestored = NO;
 }
 
 - (void)invalidateNncosLoginWithCallback:(KuiklyRenderCallback _Nullable)callback {
-    [HRBridgeModule clearNncosLoginState];
-    if (callback) {
-        callback(@{ @"code": @(0), @"isLoggedIn": @NO });
-    }
+    [HRBridgeModule clearNncosLoginStateWithCompletion:^{
+        if (callback) {
+            callback(@{ @"code": @(0), @"isLoggedIn": @NO });
+        }
+    }];
 }
 
 - (void)downloadNetbianImageWithParams:(id _Nullable)params callback:(KuiklyRenderCallback _Nullable)callback {
@@ -659,7 +660,7 @@ static BOOL gNncosCookiesRestored = NO;
     [self backupCookiesForURL:[NSURL URLWithString:kNncosHomeURL] account:kRecoveryNncosCookiesAccount];
 }
 
-+ (void)clearNncosLoginState {
++ (void)clearNncosLoginStateWithCompletion:(dispatch_block_t)completion {
     [[NSUserDefaults standardUserDefaults] setBool:NO forKey:kNncosLoginSucceededKey];
     [[NSUserDefaults standardUserDefaults] synchronize];
     NSURL *url = [NSURL URLWithString:kNncosHomeURL];
@@ -668,11 +669,20 @@ static BOOL gNncosCookiesRestored = NO;
     }
     [self deleteKeychainItemForAccount:kRecoveryNncosCookiesAccount];
     [WKWebsiteDataStore.defaultDataStore.httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
+        dispatch_group_t deletions = dispatch_group_create();
         for (NSHTTPCookie *cookie in cookies) {
             if ([cookie.domain containsString:@"nncos.com"]) {
-                [WKWebsiteDataStore.defaultDataStore.httpCookieStore deleteCookie:cookie completionHandler:nil];
+                dispatch_group_enter(deletions);
+                [WKWebsiteDataStore.defaultDataStore.httpCookieStore deleteCookie:cookie completionHandler:^{
+                    dispatch_group_leave(deletions);
+                }];
             }
         }
+        dispatch_group_notify(deletions, dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion();
+            }
+        });
     }];
 }
 

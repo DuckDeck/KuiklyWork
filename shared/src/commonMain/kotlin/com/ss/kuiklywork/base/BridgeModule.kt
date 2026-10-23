@@ -86,11 +86,34 @@ internal class BridgeModule : Module() {
     }
 
     fun openNncosLogin(responseCallbackFn: CallbackFn) {
-        callNativeMethod(OPEN_NNCOS_LOGIN, null, responseCallbackFn)
+        callNativeMethod(OPEN_NNCOS_LOGIN, null) { response ->
+            if (response?.optInt("code", -1) != 0) {
+                responseCallbackFn(response)
+            } else {
+                getNncosLoginState(responseCallbackFn)
+            }
+        }
     }
 
     fun getNncosLoginState(responseCallbackFn: CallbackFn) {
-        callNativeMethod(GET_NNCOS_LOGIN_STATE, null, responseCallbackFn)
+        // Synchronize native cookies first, but do not use their inferred login flag.
+        callNativeMethod(GET_NNCOS_LOGIN_STATE, null) {
+            fetchHtml("https://www.nncos.com/") { response ->
+                if (response?.optInt("code", -1) != 0) {
+                    responseCallbackFn(response)
+                    return@fetchHtml
+                }
+                val loggedIn = parseNncosLoginState(response.optString("body", ""))
+                responseCallbackFn(JSONObject().apply {
+                    put("code", if (loggedIn == null) -1 else 0)
+                    if (loggedIn == null) {
+                        put("message", "无法确认登录状态，请重试")
+                    } else {
+                        put("isLoggedIn", loggedIn)
+                    }
+                })
+            }
+        }
     }
 
     fun invalidateNncosLogin(responseCallbackFn: CallbackFn) {

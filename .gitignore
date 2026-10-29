@@ -30,6 +30,11 @@ Kotlin-js-store
 **/xcuserdata/**
 **/*.xcuserdatad/**
 **/xcshareddata/
+!iosApp/iosApp.xcodeproj/xcshareddata/
+iosApp/iosApp.xcodeproj/xcshareddata/*
+!iosApp/iosApp.xcodeproj/xcshareddata/xcschemes/
+iosApp/iosApp.xcodeproj/xcshareddata/xcschemes/*
+!iosApp/iosApp.xcodeproj/xcshareddata/xcschemes/iosAppTests.xcscheme
 **/IDEWorkspaceChecks.plist
 
 ## Other

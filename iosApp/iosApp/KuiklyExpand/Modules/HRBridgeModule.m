@@ -4,6 +4,7 @@
 #import <OpenKuiklyIOSRender/NSObject+KR.h>
 #import <Security/Security.h>
 #import <WebKit/WebKit.h>
+#import "CosDownloadTaskManager.h"
 
 static NSString * const kNetbianHomeURL = @"https://pic.netbian.com/";
 static NSString * const kNetbianLoginURL = @"https://pic.netbian.com/e/memberconnect/?apptype=qq";
@@ -237,6 +238,19 @@ static BOOL gNncosCookiesRestored = NO;
 @implementation HRBridgeModule
 
 - (id _Nullable)hrv_callWithMethod:(NSString *)method params:(id _Nullable)params callback:(KuiklyRenderCallback _Nullable)callback {
+    if ([method isEqualToString:@"startCosDownloadTask"] || [method isEqualToString:@"getCosDownloadTask"]) {
+        NSDictionary *dict = [self dictionaryFromParams:params];
+        CosDownloadTaskManager *manager = CosDownloadTaskManager.sharedManager;
+        if ([method isEqualToString:@"startCosDownloadTask"]) {
+            [manager startWithRequest:dict completion:^(NSDictionary *reply) { if (callback) callback(reply); }];
+        } else {
+            NSString *url = [dict[@"detailUrl"] isKindOfClass:NSString.class] && [dict[@"detailUrl"] length] ? dict[@"detailUrl"] : nil;
+            NSDictionary *snapshot = [manager snapshotForDetailURL:url];
+            BOOL failed = [snapshot[@"taskId"] length] == 0 && [snapshot[@"message"] length] > 0;
+            if (callback) callback(@{@"code":failed ? @(-1) : @0, @"task":snapshot, @"message":snapshot[@"message"] ?: @""});
+        }
+        return nil;
+    }
     if ([method isEqualToString:@"fetchHtml"]) {
         [self fetchHtmlWithParams:params callback:callback];
         return nil;
@@ -292,8 +306,9 @@ static BOOL gNncosCookiesRestored = NO;
 - (void)getNetbianDownloadRecordsWithCallback:(KuiklyRenderCallback _Nullable)callback {
     [HRBridgeModule restoreDownloadedRecordsIfNeeded];
     NSString *urls = [[NSUserDefaults standardUserDefaults] stringForKey:kNetbianDownloadedURLsKey] ?: @"";
+    NSArray *visible = [CosDownloadTaskManager.sharedManager visibleDownloadedURLs:[urls componentsSeparatedByString:@"\n"]];
     if (callback) {
-        callback(@{ @"code": @(0), @"urls": urls });
+        callback(visible ? @{ @"code": @0, @"urls": [visible componentsJoinedByString:@"\n"] } : @{ @"code": @(-1), @"message": @"无法读取下载进度，请重试" });
     }
 }
 
@@ -306,23 +321,34 @@ static BOOL gNncosCookiesRestored = NO;
         }
         return;
     }
-    NSString *stored = [[NSUserDefaults standardUserDefaults] stringForKey:kNetbianDownloadedURLsKey] ?: @"";
-    NSMutableOrderedSet<NSString *> *records = [NSMutableOrderedSet orderedSet];
-    [records addObject:url];
-    for (NSString *value in [stored componentsSeparatedByString:@"\n"]) {
-        NSString *trimmed = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if (trimmed.length > 0) {
-            [records addObject:trimmed];
-        }
-    }
-    while (records.count > kNetbianDownloadRecordLimit) {
-        [records removeObjectAtIndex:records.count - 1];
-    }
-    NSString *downloadedURLs = [[records array] componentsJoinedByString:@"\n"];
-    [[NSUserDefaults standardUserDefaults] setObject:downloadedURLs forKey:kNetbianDownloadedURLsKey];
-    [HRBridgeModule saveKeychainString:downloadedURLs account:kRecoveryDownloadedURLsAccount];
-    if (callback) {
-        callback(@{ @"code": @(0) });
+    NSError *error = nil;
+    BOOL saved = [HRBridgeModule saveCompletedCosGroup:url error:&error];
+    if (callback) callback(@{@"code":saved ? @0 : @(-1), @"message":error.localizedDescription ?: @""});
+}
+
++ (NSString *)currentNncosDownloadCookiesForURL:(NSURL *)url {
+    [self nncosCookieHeader]; // Restore this site's cookies, then select for the actual destination.
+    NSArray *cookies = [NSHTTPCookieStorage.sharedHTTPCookieStorage cookiesForURL:url] ?: @[];
+    return [NSHTTPCookie requestHeaderFieldsWithCookies:cookies][@"Cookie"] ?: @"";
+}
++ (BOOL)hasCompletedCosGroup:(NSString *)url {
+    [self restoreDownloadedRecordsIfNeeded];
+    return [[[NSUserDefaults.standardUserDefaults stringForKey:kNetbianDownloadedURLsKey] componentsSeparatedByString:@"\n"] containsObject:url];
+}
+
++ (BOOL)saveCompletedCosGroup:(NSString *)url error:(NSError **)error {
+    @synchronized (self) {
+        NSString *stored = [NSUserDefaults.standardUserDefaults stringForKey:kNetbianDownloadedURLsKey] ?: @"";
+        NSMutableOrderedSet *records = [NSMutableOrderedSet orderedSetWithObject:url];
+        for (NSString *line in [stored componentsSeparatedByString:@"\n"]) if (line.length) [records addObject:line];
+        while (records.count > kNetbianDownloadRecordLimit) [records removeObjectAtIndex:records.count - 1];
+        NSString *value = [records.array componentsJoinedByString:@"\n"];
+        [NSUserDefaults.standardUserDefaults setObject:value forKey:kNetbianDownloadedURLsKey];
+        BOOL saved = [NSUserDefaults.standardUserDefaults synchronize];
+        [self saveKeychainString:value account:kRecoveryDownloadedURLsAccount];
+        saved = saved && [[self keychainStringForAccount:kRecoveryDownloadedURLsAccount] isEqual:value];
+        if (!saved && error) *error = [NSError errorWithDomain:@"CosDownload" code:8 userInfo:@{NSLocalizedDescriptionKey:@"下载记录保存失败，请继续下载重试"}];
+        return saved;
     }
 }
 

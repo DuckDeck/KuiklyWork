@@ -151,6 +151,19 @@ internal class BridgeModule : Module() {
         markNetbianImageDownloaded(url, responseCallbackFn)
     }
 
+    fun startCosDownloadTask(detailUrl: String, title: String, imageUrls: List<String>, referer: String, responseCallbackFn: CallbackFn) {
+        val args = JSONObject().apply {
+            put("detailUrl", detailUrl); put("title", title); put("referer", referer)
+            put("imageUrls", JSONArray().apply { imageUrls.forEach { put(it) } })
+        }
+        callNativeMethod("startCosDownloadTask", args, responseCallbackFn)
+    }
+
+    fun getCosDownloadTask(detailUrl: String? = null, responseCallbackFn: CallbackFn) {
+        val args = JSONObject().apply { if (detailUrl != null) put("detailUrl", detailUrl) }
+        callNativeMethod("getCosDownloadTask", args, responseCallbackFn)
+    }
+
     fun openPage(
         url: String,
         closeCurPage: Boolean = false,

@@ -3,6 +3,7 @@ package com.ss.kuiklywork
 import com.ss.kuiklywork.base.BasePager
 import com.ss.kuiklywork.base.BridgeModule
 import com.ss.kuiklywork.base.parseNncosLoginState
+import com.ss.kuiklywork.base.setTimeout
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewBuilder
@@ -38,6 +39,38 @@ internal class CosImageDetailPage : BasePager() {
     private var loginRenewing by observable(false)
     private var loginStateClearing = false
     private var contentNotice = ""
+    private var detailPagesLoading = false
+    private var detailLoadFailed = false
+    private var downloadTask by observable<CosDownloadSnapshot?>(null)
+    private var downloadSubmitting by observable(false)
+    private var downloadUiGeneration = 0
+    private var lastCompletedTaskId = ""
+    private val downloadPoller by lazy {
+        CosDownloadPoller(
+            query = { done -> acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).getCosDownloadTask(detailUrl) { done(parseCosDownloadSnapshot(it)) } },
+            schedule = { delay, callback -> setTimeout(delay, callback) },
+            update = { applyDownloadTask(it) }
+        )
+    }
+
+    override fun pageDidAppear() {
+        super.pageDidAppear()
+        downloadSubmitting = false
+        downloadPoller.start()
+    }
+    override fun pageDidDisappear() { downloadUiGeneration++; downloadPoller.stop(); super.pageDidDisappear() }
+    override fun pageWillDestroy() { downloadUiGeneration++; downloadPoller.stop(); super.pageWillDestroy() }
+
+    private fun applyDownloadTask(task: CosDownloadSnapshot) {
+        if (task.status != "idle" && task.detailUrl != detailUrl) return
+        downloadTask = task
+        downloading = task.status == "running"
+        downloadingIndex = task.completed
+        if (task.status == "completed" && task.taskId != lastCompletedTaskId) {
+            lastCompletedTaskId = task.taskId
+            loadDownloadState()
+        }
+    }
 
     override fun created() {
         super.created()
@@ -59,10 +92,13 @@ internal class CosImageDetailPage : BasePager() {
 
     private fun loadDetail() {
         if (detailUrl.isEmpty()) {
+            detailLoadFailed = true
             statusText = "\u6ca1\u6709\u56fe\u7247\u8be6\u60c5\u5730\u5740"
             return
         }
         val requestId = ++detailLoadRequestId
+        detailPagesLoading = true
+        detailLoadFailed = false
         loginExpired = false
         contentNotice = ""
         statusText = "\u6b63\u5728\u52a0\u8f7d..."
@@ -82,7 +118,8 @@ internal class CosImageDetailPage : BasePager() {
         requestId: Int
     ) {
         if (pendingUrls.isEmpty()) {
-            statusText = if (imageUrls.isEmpty()) "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247" else ""
+            detailPagesLoading = false
+            statusText = if (detailLoadFailed) "部分页面加载失败，点击重试" else if (imageUrls.isEmpty()) "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247" else ""
             return
         }
         val pageUrl = pendingUrls.removeAt(0)
@@ -94,6 +131,7 @@ internal class CosImageDetailPage : BasePager() {
             if (requestId != detailLoadRequestId) return@fetchHtml
             val html = response?.optString("body", "") ?: ""
             if (response?.optInt("code", -1) != 0 || html.isEmpty()) {
+                detailLoadFailed = true
                 if (imageUrls.isEmpty() && pendingUrls.isEmpty()) {
                     statusText = response?.optString("message", "\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25") ?: "\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25"
                 }
@@ -101,11 +139,12 @@ internal class CosImageDetailPage : BasePager() {
                 return@fetchHtml
             }
             val result = parseNncosDetail(html, pageUrl)
-            if (result.title.isNotEmpty()) titleText = result.title
-            // Preview images remain useful even when the member section is locked.
-            val knownImageUrls = imageUrls.toHashSet()
-            imageUrls.addAll(result.imageUrls.filter { knownImageUrls.add(it) })
+            if (!appendDetailPage(result)) {
+                loadDetailPages(pendingUrls, loadedUrls, requestId)
+                return@fetchHtml
+            }
             if (result.hasHiddenVipContent) {
+                detailPagesLoading = false
                 pendingUrls.clear()
                 contentNotice = when (result.isLoggedIn) {
                     true -> "当前账号无法查看完整会员内容，以上为可查看的图片"
@@ -123,13 +162,26 @@ internal class CosImageDetailPage : BasePager() {
                 .filter { it !in loadedUrls && it !in pendingUrls }
                 .forEach { pendingUrls.add(it) }
             if (pendingUrls.isEmpty()) {
-                statusText = if (imageUrls.isEmpty()) "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247" else ""
+                detailPagesLoading = false
+                statusText = if (detailLoadFailed) "部分页面加载失败，点击重试" else if (imageUrls.isEmpty()) "\u6ca1\u6709\u89e3\u6790\u5230\u56fe\u7247" else ""
             } else {
                 statusText = "\u6b63\u5728\u52a0\u8f7d\u7b2c ${loadedUrls.size + 1} \u9875..."
                 loadDetailPages(pendingUrls, loadedUrls, requestId)
             }
         }
     }
+
+    internal fun appendDetailPage(result: CosDetailResult): Boolean {
+        if (!result.isRecognized) { detailLoadFailed = true; return false }
+        if (result.title.isNotEmpty()) titleText = result.title
+        // Preview images remain useful even when the member section is locked.
+        val knownImageUrls = imageUrls.toHashSet()
+        imageUrls.addAll(result.imageUrls.filter { knownImageUrls.add(it) })
+        return true
+    }
+
+    internal fun readyDownloadManifest(): List<String>? =
+        cosDownloadManifest(imageUrls, detailPagesLoading, detailLoadFailed)
 
     private fun markNncosLoginExpired() {
         if (loginExpired) return
@@ -157,47 +209,22 @@ internal class CosImageDetailPage : BasePager() {
             renewNncosLogin()
             return
         }
-        if (downloading) return
-        if (imageUrls.isEmpty()) {
-            acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast("\u6ca1\u6709\u53ef\u4e0b\u8f7d\u7684\u56fe\u7247")
+        if (downloading || downloadSubmitting) return
+        val manifest = readyDownloadManifest()
+        if (manifest == null && downloadTask?.status != "interrupted") {
+            acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast("图片清单尚未加载完整，请加载完成后再下载")
             return
         }
-        downloading = true
-        downloadingIndex = 1
-        downloadImageAt(0)
-    }
-
-    private fun downloadImageAt(index: Int) {
-        if (index >= imageUrls.size) {
-            acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).markImageDownloaded(detailUrl) { response ->
-                downloading = false
-                downloadingIndex = 0
-                statusText = contentNotice
-                if (response?.optInt("code", -1) == 0) {
-                    downloaded = true
-                    acquireModule<BridgeModule>(BridgeModule.MODULE_NAME)
-                        .toast("\u5df2\u4fdd\u5b58 ${imageUrls.size} \u5f20\u56fe\u7247")
-                } else {
-                    acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast("\u4e0b\u8f7d\u8bb0\u5f55\u4fdd\u5b58\u5931\u8d25")
-                }
-            }
-            return
-        }
-        downloadingIndex = index + 1
-        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).downloadImage(
-            url = imageUrls[index],
-            title = "${titleText}_${index + 1}",
-            referer = detailUrl
-        ) { response ->
+        downloadSubmitting = true
+        val generation = downloadUiGeneration
+        acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).startCosDownloadTask(detailUrl, titleText, manifest.orEmpty(), detailUrl) { response ->
+            if (generation != downloadUiGeneration) return@startCosDownloadTask
+            downloadSubmitting = false
             if (response?.optInt("code", -1) != 0) {
-                downloading = false
-                downloadingIndex = 0
-                statusText = contentNotice
-                val message = response?.optString("message", "\u4e0b\u8f7d\u5931\u8d25") ?: "\u4e0b\u8f7d\u5931\u8d25"
-                acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast(message)
-                return@downloadImage
+                acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).toast(response?.optString("message", "无法开始下载") ?: "无法开始下载")
+                return@startCosDownloadTask
             }
-            downloadImageAt(index + 1)
+            parseCosDownloadSnapshot(response)?.let { applyDownloadTask(it) }
         }
     }
 
@@ -239,23 +266,26 @@ internal class CosImageDetailPage : BasePager() {
                     backDisable = false
                 }
             }
-            vif({ ctx.downloading }) {
+            vif({ ctx.downloadTask?.visible == true }) {
                 View {
                     attr {
-                        height(36f)
+                        height(if (ctx.downloadTask?.status == "interrupted") 52f else 36f)
                         flexDirectionRow()
                         allCenter()
                     }
-                    ActivityIndicator {
-                        attr {
-                            isGrayStyle(true)
-                            marginRight(8f)
+                    vif({ ctx.downloading }) {
+                        ActivityIndicator {
+                            attr {
+                                isGrayStyle(true)
+                                marginRight(8f)
+                            }
                         }
                     }
                     Text {
                         attr {
-                            text("\u6b63\u5728\u4e0b\u8f7d\u7b2c ${ctx.downloadingIndex}/${ctx.imageUrls.size} \u5f20")
+                            text(if (ctx.downloadTask?.status == "interrupted") "已暂停 ${ctx.downloadingIndex}/${ctx.downloadTask?.total ?: 0}：${ctx.downloadTask?.message.orEmpty()}" else "已下载 ${ctx.downloadingIndex}/${ctx.downloadTask?.total ?: 0} 张（${ctx.downloadTask?.percent ?: 0}%）")
                             fontSize(13f)
+                            lines(2)
                             color(Color(0xFF666666))
                         }
                     }
@@ -277,9 +307,8 @@ internal class CosImageDetailPage : BasePager() {
                             when {
                                 ctx.loginRenewing -> "登录中"
                                 ctx.loginExpired -> "重新登录"
-                                ctx.downloading -> "\u4e0b\u8f7d\u4e2d"
-                                ctx.downloaded -> "\u91cd\u65b0\u4e0b\u8f7d"
-                                else -> "\u4e0b\u8f7d"
+                                ctx.downloadSubmitting -> "准备中"
+                                else -> (ctx.downloadTask ?: CosDownloadSnapshot()).buttonText(ctx.downloaded)
                             }
                         )
                         fontSize(14f)
@@ -378,7 +407,8 @@ internal data class CosDetailResult(
     val imageUrls: List<String>,
     val pageUrls: List<String>,
     val hasHiddenVipContent: Boolean,
-    val isLoggedIn: Boolean?
+    val isLoggedIn: Boolean?,
+    val isRecognized: Boolean
 ) {
     val requiresLogin: Boolean
         get() = hasHiddenVipContent && isLoggedIn == false
@@ -413,7 +443,8 @@ internal fun parseNncosDetail(html: String, pageUrl: String): CosDetailResult {
         imageUrls = imageUrls,
         pageUrls = parseNncosDetailPageUrls(content, pageUrl),
         hasHiddenVipContent = content.hasLockedCosVipContent(),
-        isLoggedIn = parseNncosLoginState(html)
+        isLoggedIn = parseNncosLoginState(html),
+        isRecognized = (postContent != null || contentStart >= 0) && (imageUrls.isNotEmpty() || content.hasLockedCosVipContent())
     )
 }
 

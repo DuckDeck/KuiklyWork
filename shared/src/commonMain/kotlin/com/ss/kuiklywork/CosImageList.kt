@@ -21,7 +21,6 @@ import com.tencent.kuikly.core.views.Scroller
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 
-private const val NNCOS_MAX_RENDER_ITEMS = 120
 private const val NNCOS_REQUEST_TIMEOUT_MS = 15000
 private const val NNCOS_LIST_PADDING = 6f
 
@@ -72,6 +71,23 @@ internal class CosImageListPage : BasePager() {
     private var loginStateRequestId = 0
     private val categoryCache = mutableMapOf<String, CosCategoryCache>()
     private var downloadedDetailUrls = emptySet<String>()
+    private var downloadTask by observable<CosDownloadSnapshot?>(null)
+    private var lastCompletedTaskId = ""
+    private val downloadPoller by lazy {
+        CosDownloadPoller(
+            query = { done -> acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).getCosDownloadTask { done(parseCosDownloadSnapshot(it)) } },
+            schedule = { delay, callback -> setTimeout(delay, callback) },
+            update = { task ->
+                val old = downloadTask
+                downloadTask = task
+                val finishedRunning = old?.status == "running" && (task.taskId != old.taskId || task.status != "running")
+                if (finishedRunning || task.status == "completed" && task.taskId != lastCompletedTaskId) {
+                    if (task.status == "completed") lastCompletedTaskId = task.taskId
+                    loadDownloadedRecords()
+                }
+            }
+        )
+    }
 
     private val currentCategory: CosCategory
         get() = COS_CATEGORY_LIST[selectedCategoryIndex]
@@ -89,7 +105,11 @@ internal class CosImageListPage : BasePager() {
         super.pageDidAppear()
         refreshLoginState()
         loadDownloadedRecords()
+        downloadPoller.start()
     }
+
+    override fun pageDidDisappear() { downloadPoller.stop(); super.pageDidDisappear() }
+    override fun pageWillDestroy() { downloadPoller.stop(); super.pageWillDestroy() }
 
     private fun loadDownloadedRecords(afterLoad: (() -> Unit)? = null) {
         acquireModule<BridgeModule>(BridgeModule.MODULE_NAME).getImageDownloadRecords { response ->
@@ -262,28 +282,38 @@ internal class CosImageListPage : BasePager() {
                         nncosLoginKnown = true
                     }
                 }
-                if (result.items.isEmpty()) {
-                    nextPageUrl = null
-                    noMore = true
-                    if (append) {
-                        statusMessage = ""
-                    } else {
-                        statusMessage = if (searchKeyword.isNotEmpty()) "没有找到相关图片，试试其他关键词" else "没有解析到图片"
-                    }
-                    return@setTimeout
-                }
-                val merged = (if (append) mergeCosImageItems(imageItems, result.items) else result.items)
-                    .map { item -> item.copy(downloaded = item.detailUrl in downloadedDetailUrls) }
-                imageItems = merged.take(NNCOS_MAX_RENDER_ITEMS)
-                syncImageRows()
-                pageIndex = page
-                nextPageUrl = result.nextPageUrl?.takeIf { it != pageUrl }
-                noMore = nextPageUrl == null || merged.size >= NNCOS_MAX_RENDER_ITEMS
-                statusMessage = ""
-                categoryCache[sourceUrl] = CosCategoryCache(imageItems, pageIndex, noMore, nextPageUrl)
+                applyPageResult(result, page, append, pageUrl, sourceUrl)
                 bridgeModule.log("CosImageList page applied page=$page total=${imageItems.size} noMore=$noMore")
             }
         }
+    }
+
+    internal fun applyPageResult(
+        result: CosPageResult,
+        page: Int,
+        append: Boolean,
+        pageUrl: String,
+        sourceUrl: String = currentListUrl
+    ) {
+        if (result.items.isEmpty()) {
+            nextPageUrl = null
+            noMore = true
+            statusMessage = if (append) "" else if (searchKeyword.isNotEmpty()) {
+                "没有找到相关图片，试试其他关键词"
+            } else "没有解析到图片"
+            return
+        }
+        val merged = (if (append) mergeCosImageItems(imageItems, result.items) else result.items)
+            .map { item -> item.copy(downloaded = item.detailUrl in downloadedDetailUrls) }
+        // Native views are already bounded by vforLazy. Keep all fetched records
+        // and let the server's next-page link determine when pagination ends.
+        imageItems = merged
+        syncImageRows()
+        pageIndex = page
+        nextPageUrl = result.nextPageUrl?.takeIf { it != pageUrl }
+        noMore = nextPageUrl == null
+        statusMessage = ""
+        categoryCache[sourceUrl] = CosCategoryCache(imageItems, pageIndex, noMore, nextPageUrl)
     }
 
     private fun syncImageRows() {
@@ -372,6 +402,19 @@ internal class CosImageListPage : BasePager() {
                         fontWeightBold()
                     }
                 }
+            }
+            vif({ ctx.downloadTask?.visible == true }) {
+                CosDownloadProgress(
+                    snapshot = { ctx.downloadTask },
+                    bottom = { maxOf(ctx.pageData.safeAreaInsets.bottom, ctx.pageData.androidBottomBavBarHeight) + 24f },
+                    onClick = {
+                        ctx.downloadTask?.let { task ->
+                            ctx.acquireModule<RouterModule>(RouterModule.MODULE_NAME).openPage("cosImageDetail", JSONObject().apply {
+                                put("title", task.title); put("detailUrl", task.detailUrl)
+                            })
+                        }
+                    }
+                )
             }
         }
     }

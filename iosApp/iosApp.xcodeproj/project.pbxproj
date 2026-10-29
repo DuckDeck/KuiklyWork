@@ -28,6 +28,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+        C05D00000000000000000011 = {isa = PBXContainerItemProxy; containerPortal = 7555FF73242A565900829871; proxyType = 1; remoteGlobalIDString = 7555FF7A242A565900829871; remoteInfo = iosApp; };
 		AE4EC9672F98F17800E0BB28 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 7555FF73242A565900829871 /* Project object */;
@@ -73,6 +74,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        C05D00000000000000000003 /* iosAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = iosAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0474A3F129F6A41000F43E31 /* UINavigationController+FDFullscreenPopGesture.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UINavigationController+FDFullscreenPopGesture.h"; sourceTree = "<group>"; };
 		0474A3F229F6A41000F43E31 /* UINavigationController+FDFullscreenPopGesture.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UINavigationController+FDFullscreenPopGesture.m"; sourceTree = "<group>"; };
 		04E32B3C29F01971000A6BC5 /* KRRouterHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KRRouterHandler.h; sourceTree = "<group>"; };
@@ -113,10 +115,13 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+        C05D00000000000000000001 /* Downloads */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Downloads; sourceTree = "<group>"; };
+        C05D00000000000000000002 /* iosAppTests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = iosAppTests; sourceTree = "<group>"; };
 		AE4EC9632F98F17800E0BB28 /* KuiklyKeyboard */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AE4EC96A2F98F17800E0BB28 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = KuiklyKeyboard; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+        C05D00000000000000000004 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		412082966DD7AFE0B53032CB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -176,6 +181,7 @@
 		7555FF72242A565900829871 = {
 			isa = PBXGroup;
 			children = (
+                C05D00000000000000000002 /* iosAppTests */,
 				FF6B714C29A2A45D009349F1 /* iosApp-Bridging-Header.h */,
 				7555FF7D242A565900829871 /* iosApp */,
 				AE4EC9632F98F17800E0BB28 /* KuiklyKeyboard */,
@@ -188,6 +194,7 @@
 		7555FF7C242A565900829871 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+                C05D00000000000000000003 /* iosAppTests.xctest */,
 				7555FF7B242A565900829871 /* iosApp.app */,
 				AE4EC9622F98F17800E0BB28 /* KuiklyKeyboard.appex */,
 			);
@@ -224,6 +231,7 @@
 		FF6B713E29A2A10E009349F1 /* KuiklyExpand */ = {
 			isa = PBXGroup;
 			children = (
+                C05D00000000000000000001 /* Downloads */,
 				FF6B714D29A2A6BA009349F1 /* Handler */,
 				FF6B714329A2A174009349F1 /* KuiklyRenderViewController.h */,
 				FF6B713F29A2A173009349F1 /* KuiklyRenderViewController.m */,
@@ -255,6 +263,18 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+        C05D00000000000000000005 /* iosAppTests */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = C05D00000000000000000008;
+            buildPhases = (C05D00000000000000000006, C05D00000000000000000004);
+            buildRules = ();
+            dependencies = (C05D00000000000000000012);
+            fileSystemSynchronizedGroups = (C05D00000000000000000002);
+            name = iosAppTests;
+            productName = iosAppTests;
+            productReference = C05D00000000000000000003;
+            productType = "com.apple.product-type.bundle.unit-test";
+        };
 		7555FF7A242A565900829871 /* iosApp */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 7555FFA5242A565B00829871 /* Build configuration list for PBXNativeTarget "iosApp" */;
@@ -274,6 +294,7 @@
 				AE4EC9682F98F17800E0BB28 /* PBXTargetDependency */,
 			);
 			name = iosApp;
+            fileSystemSynchronizedGroups = (C05D00000000000000000001);
 			productName = iosApp;
 			productReference = 7555FF7B242A565900829871 /* iosApp.app */;
 			productType = "com.apple.product-type.application";
@@ -332,6 +353,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+                C05D00000000000000000005 /* iosAppTests */,
 				7555FF7A242A565900829871 /* iosApp */,
 				AE4EC9612F98F17800E0BB28 /* KuiklyKeyboard */,
 			);
@@ -468,6 +490,7 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+        C05D00000000000000000006 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		7555FF77242A565900829871 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -495,6 +518,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+        C05D00000000000000000012 = {isa = PBXTargetDependency; target = 7555FF7A242A565900829871; targetProxy = C05D00000000000000000011; };
 		AE4EC9682F98F17800E0BB28 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = AE4EC9612F98F17800E0BB28 /* KuiklyKeyboard */;
@@ -503,6 +527,38 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+        C05D00000000000000000009 = {isa = XCBuildConfiguration; buildSettings = {
+            BUNDLE_LOADER = "$(TEST_HOST)";
+            TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iosApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/iosApp";
+            CLANG_ENABLE_MODULES = YES;
+            CLANG_ENABLE_OBJC_ARC = YES;
+            CODE_SIGN_STYLE = Automatic;
+            GENERATE_INFOPLIST_FILE = YES;
+            IPHONEOS_DEPLOYMENT_TARGET = 14.1;
+            SDKROOT = iphoneos;
+            PRODUCT_BUNDLE_IDENTIFIER = com.ss.kuiklywork.iosAppTests;
+            PRODUCT_NAME = "$(TARGET_NAME)";
+            TARGETED_DEVICE_FAMILY = "1,2";
+            ENABLE_TESTING_SEARCH_PATHS = YES;
+            HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/iosApp/KuiklyExpand/Downloads");
+            OTHER_LDFLAGS = ("$(inherited)", "-framework", XCTest);
+        }; name = Debug; };
+        C05D00000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {
+            BUNDLE_LOADER = "$(TEST_HOST)";
+            TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iosApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/iosApp";
+            CLANG_ENABLE_MODULES = YES;
+            CLANG_ENABLE_OBJC_ARC = YES;
+            CODE_SIGN_STYLE = Automatic;
+            GENERATE_INFOPLIST_FILE = YES;
+            IPHONEOS_DEPLOYMENT_TARGET = 14.1;
+            SDKROOT = iphoneos;
+            PRODUCT_BUNDLE_IDENTIFIER = com.ss.kuiklywork.iosAppTests;
+            PRODUCT_NAME = "$(TARGET_NAME)";
+            TARGETED_DEVICE_FAMILY = "1,2";
+            ENABLE_TESTING_SEARCH_PATHS = YES;
+            HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/iosApp/KuiklyExpand/Downloads");
+            OTHER_LDFLAGS = ("$(inherited)", "-framework", XCTest);
+        }; name = Release; };
 		7555FFA3242A565B00829871 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -623,6 +679,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 312F0DBEF95A91A72E5FCBFA /* Pods-iosApp.debug.xcconfig */;
 			buildSettings = {
+                HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/iosApp/KuiklyExpand/Downloads", "$(SRCROOT)/iosApp/KuiklyExpand/Modules");
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_ASSET_PATHS = "\"iosApp/Preview Content\"";
@@ -650,6 +707,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = EAD586BEDBD0772EDC4E4B96 /* Pods-iosApp.release.xcconfig */;
 			buildSettings = {
+                HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/iosApp/KuiklyExpand/Downloads", "$(SRCROOT)/iosApp/KuiklyExpand/Modules");
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_ASSET_PATHS = "\"iosApp/Preview Content\"";
@@ -766,6 +824,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+        C05D00000000000000000008 = {isa = XCConfigurationList; buildConfigurations = (C05D00000000000000000009, C05D00000000000000000010); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
 		7555FF76242A565900829871 /* Build configuration list for PBXProject "iosApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

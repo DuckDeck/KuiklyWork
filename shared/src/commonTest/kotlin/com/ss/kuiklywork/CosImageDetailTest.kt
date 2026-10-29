@@ -4,9 +4,25 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.assertNull
 
 class CosImageDetailTest {
     private val pageUrl = "https://www.nncos.com/27619.html"
+
+    @Test fun loginOrMaintenanceHtmlIsNotACompleteDetailPage() {
+        assertFalse(parseNncosDetail("<html><h1>维护中</h1><form>登录</form></html>", pageUrl).isRecognized)
+        assertFalse(parseNncosDetail("<div class='recommend'><img src='https://img.nncos.com/banner.jpg'></div>", pageUrl).isRecognized)
+        assertTrue(parseNncosDetail("<article class='post-content'><img src='https://img.nncos.com/1.jpg'></article>", pageUrl).isRecognized)
+    }
+
+    @Test fun unrecognizedSecondPageKeepsPartialAlbumUndownloadable() {
+        val page = CosImageDetailPage()
+        assertTrue(page.appendDetailPage(parseNncosDetail("<article class='post-content'><img src='https://img.nncos.com/1.jpg'></article>", pageUrl)))
+        assertEquals(1, page.imageUrls.size)
+        assertFalse(page.appendDetailPage(parseNncosDetail("<html><h1>需要登录</h1></html>", "$pageUrl/2")))
+        assertEquals(1, page.imageUrls.size) // Keep available previews visible.
+        assertNull(page.readyDownloadManifest())
+    }
 
     @Test
     fun titleShowsAvailableImageCountAsPagesAreAdded() {

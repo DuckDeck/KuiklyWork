@@ -19,6 +19,9 @@ import com.ss.kuiklywork.KRApplication
 import com.ss.kuiklywork.KuiklyRenderActivity
 import com.ss.kuiklywork.NetbianLoginActivity
 import com.ss.kuiklywork.NncosLoginActivity
+import com.ss.kuiklywork.download.CosNativeDownloads
+import com.ss.kuiklywork.download.CosDownloadRequest
+import com.ss.kuiklywork.download.toBridgeSnapshot
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -39,6 +42,23 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
     override fun call(method: String, params: String?, callback: KuiklyRenderCallback?): Any? {
         return when (method) {
+            "startCosDownloadTask", "getCosDownloadTask" -> {
+                // Start/query are short calls. The native manager retains no render callback.
+                try {
+                    val args = JSONObject(params ?: "{}")
+                    val manager = CosNativeDownloads.manager
+                    if (method == "getCosDownloadTask") {
+                        invokeDownloadCallback(callback, mapOf("code" to 0, "task" to manager.snapshot(args.optString("detailUrl").takeIf { it.isNotEmpty() }).toBridgeSnapshot()))
+                    } else {
+                        val urls = args.optJSONArray("imageUrls") ?: JSONArray()
+                        val reply = manager.start(CosDownloadRequest(args.optString("detailUrl"), args.optString("title"),
+                            (0 until urls.length()).map { urls.getString(it) }, args.optString("referer", "https://www.nncos.com/")))
+                        invokeDownloadCallback(callback, mapOf("code" to reply.code, "task" to reply.task.toBridgeSnapshot(), "message" to reply.message))
+                    }
+                } catch (error: Exception) {
+                    invokeDownloadCallback(callback, mapOf("code" to -1, "message" to (error.message ?: "下载任务不可用")))
+                }
+            }
             "ssoRequest" -> {
                 ssoRequest(params, callback)
             }
@@ -227,9 +247,16 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
     private fun getNetbianDownloadRecords(callback: KuiklyRenderCallback?) {
         restoreDownloadRecordsIfNeeded()
+        val urls = netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty()
+        val visible = try {
+            CosNativeDownloads.manager.visibleDownloadedUrls(urls.lineSequence().filter { it.isNotBlank() }.toList()).joinToString("\n")
+        } catch (_: Exception) {
+            invokeDownloadCallback(callback, mapOf("code" to -1, "message" to "无法读取下载进度，请重试"))
+            return
+        }
         invokeDownloadCallback(
             callback,
-            mapOf("code" to 0, "urls" to netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty())
+            mapOf("code" to 0, "urls" to visible)
         )
     }
 
@@ -264,18 +291,12 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             invokeDownloadCallback(callback, mapOf("code" to -1, "message" to "missing url"))
             return
         }
-        val records = netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty()
-            .lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && it != url }
-            .take(MAX_NETBIAN_DOWNLOAD_RECORDS - 1)
-            .toList()
-        val downloadedUrls = (listOf(url) + records).joinToString("\n")
-        netbianDownloadPrefs().edit()
-            .putString(KEY_NETBIAN_DOWNLOADED_URLS, downloadedUrls)
-            .apply()
-        recoveryPrefs().edit().putString(KEY_RECOVERY_DOWNLOADED_URLS, downloadedUrls).apply()
-        invokeDownloadCallback(callback, mapOf("code" to 0))
+        try {
+            saveCompletedCosGroup(url)
+            invokeDownloadCallback(callback, mapOf("code" to 0))
+        } catch (error: Exception) {
+            invokeDownloadCallback(callback, mapOf("code" to -1, "message" to (error.message ?: "下载记录保存失败")))
+        }
     }
 
     private fun downloadNetbianImageUrl(
@@ -713,6 +734,17 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     }
 
     companion object {
+        fun hasCompletedCosGroup(url: String): Boolean {
+            restoreDownloadRecordsIfNeeded()
+            return netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty().lineSequence().any { it == url }
+        }
+        @Synchronized fun saveCompletedCosGroup(url: String) {
+            val old = netbianDownloadPrefs().getString(KEY_NETBIAN_DOWNLOADED_URLS, "").orEmpty()
+            val records = (listOf(url) + old.lineSequence().filter { it.isNotBlank() && it != url }.toList())
+                .take(MAX_NETBIAN_DOWNLOAD_RECORDS).joinToString("\n")
+            check(netbianDownloadPrefs().edit().putString(KEY_NETBIAN_DOWNLOADED_URLS, records).commit()) { "下载记录保存失败" }
+            check(recoveryPrefs().edit().putString(KEY_RECOVERY_DOWNLOADED_URLS, records).commit()) { "下载恢复记录保存失败" }
+        }
         const val MODULE_NAME = "HRBridgeModule"
         private const val TAG = "KuiklyWork"
         private const val NETBIAN_HOST = "pic.netbian.com"

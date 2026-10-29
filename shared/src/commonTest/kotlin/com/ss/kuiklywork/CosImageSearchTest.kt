@@ -8,6 +8,56 @@ import kotlin.test.assertTrue
 
 class CosImageSearchTest {
     @Test
+    fun listContinuesPastThirdPageWithoutDroppingItems() {
+        val page = CosImageListPage()
+        for (index in 1..4) {
+            page.applyPageResult(
+                result = CosPageResult(
+                    items = ((index - 1) * 48 + 1..index * 48).map { listItem(it) },
+                    nextPageUrl = "https://www.nncos.com/page/${index + 1}"
+                ),
+                page = index,
+                append = index > 1,
+                pageUrl = if (index == 1) "https://www.nncos.com/" else "https://www.nncos.com/page/$index"
+            )
+            assertFalse(page.noMore, "Page $index still has a next-page link")
+        }
+        assertEquals(192, page.imageItems.size)
+        assertEquals("https://www.nncos.com/1.html", page.imageItems.first().detailUrl)
+        assertEquals("https://www.nncos.com/192.html", page.imageItems.last().detailUrl)
+        assertEquals("加载更多", page.footerText())
+    }
+
+    @Test
+    fun listEndsWhenServerHasNoNextPageEvenBelowOldLimit() {
+        val page = CosImageListPage()
+        page.applyPageResult(CosPageResult((1..48).map { listItem(it) }, null), 1, false, "https://www.nncos.com/")
+        assertEquals(48, page.imageItems.size)
+        assertTrue(page.noMore)
+        assertEquals("没有更多了", page.footerText())
+    }
+
+    @Test
+    fun laterPagesKeepDeduplicatingBeforeActualLastPage() {
+        val page = CosImageListPage()
+        page.applyPageResult(CosPageResult((1..100).map { listItem(it) }, "/page/2"), 1, false, "/")
+        page.applyPageResult(CosPageResult((90..150).map { listItem(it) }, "/page/3"), 2, true, "/page/2")
+        assertEquals(150, page.imageItems.size)
+        assertFalse(page.noMore)
+        page.applyPageResult(CosPageResult((140..170).map { listItem(it) }, null), 3, true, "/page/3")
+        assertEquals(170, page.imageItems.size)
+        assertTrue(page.noMore)
+    }
+
+    private fun listItem(index: Int) = CosImageItem(
+        imageUrl = "https://img.nncos.com/$index.webp",
+        title = "图片 $index",
+        detailUrl = "https://www.nncos.com/$index.html",
+        categoryName = "",
+        publishedAt = ""
+    )
+
+    @Test
     fun searchEncodesChineseAndQueryDelimiters() {
         assertEquals(
             "https://www.nncos.com/?cat=&s=%E7%BE%8E%E7%BE%8E",
